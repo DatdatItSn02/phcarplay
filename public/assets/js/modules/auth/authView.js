@@ -97,8 +97,8 @@ export function mountAuth(root, ctx) {
     return el;
   }
 
-  function message(text, actions = []) {
-    return h('div', { class: 'notice', role: 'status' }, h('p', {}, text), actions);
+  function message(text, actions = [], warn = false) {
+    return h('div', { class: warn ? 'notice notice-warn' : 'notice', role: 'status' }, h('p', {}, text), actions);
   }
 
   function linkButton(label, onClick) {
@@ -120,7 +120,7 @@ export function mountAuth(root, ctx) {
 
   // Quên mật khẩu, bước 2: nhập mã 6 số và mật khẩu mới (gửi lại mã sau 60 giây).
   function codeStep(login, sent) {
-    const info = h('div', { 'aria-live': 'polite' }, sent ? message(sent.message) : null);
+    const info = h('div', { 'aria-live': 'polite' }, sent ? message(sent.message, [], Boolean(sent.test_mode)) : null);
     const code = field({ label: 'Mã 6 số trong email', name: 'code', autocomplete: 'one-time-code', attrs: CODE_INPUT });
     code.input.addEventListener('input', () => { const c = cleanCode(code.input.value); if (c !== code.input.value) code.input.value = c; });
     const [password, confirm] = passwordPair();
@@ -128,7 +128,8 @@ export function mountAuth(root, ctx) {
       try {
         const data = await ctx.authApi.forgot(login);
         clear(info);
-        info.append(message('Đã gửi mã mới. ' + data.message));
+        // Chế độ thử (giai đoạn 16): thư không gửi thật nên không được nói "Đã gửi".
+        info.append(data.test_mode ? message(data.message, [], true) : message('Đã gửi mã mới. ' + data.message));
         resend.start(data.resend_after || 60);
       } catch (err) {
         if (!(err instanceof ApiError)) throw err;
@@ -169,7 +170,7 @@ export function mountAuth(root, ctx) {
       const name = field({ label: 'Tên hiển thị', name: 'name', autocomplete: 'name', required: false });
       const phone = field({ label: 'Số điện thoại', name: 'phone', type: 'tel', autocomplete: 'tel', hint: 'Dùng để đăng nhập nhanh trên màn hình xe, ví dụ 0912345678.',
         attrs: { inputmode: 'tel' } });
-      const email = field({ label: 'Email', name: 'email', type: 'email', autocomplete: 'email', hint: 'Để nhận mã khi quên hoặc đổi mật khẩu.' });
+      const email = field({ label: 'Email', name: 'email', type: 'email', autocomplete: 'email', hint: 'Để nhận mã khi quên mật khẩu.' });
       const password = field({ label: 'Mật khẩu', name: 'password', type: 'password', autocomplete: 'new-password', hint: 'Từ 6 ký tự trở lên.' });
       return form({ fields: [name, phone, email, password], submitLabel: 'Tạo tài khoản',
         submit: async (v) => ctx.onAuthed(await ctx.authApi.register(v.name, v.email, v.password, v.phone)) });

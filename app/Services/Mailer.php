@@ -20,10 +20,24 @@ final class Mailer
         $this->cfg = $cfg;
     }
 
+    /** 'smtp' | 'mail' | 'log' (mọi giá trị khác đều coi là log). */
+    public function driver(): string
+    {
+        $cfg = $this->cfg ?? (array) Config::get('mail', []);
+        $driver = strtolower(trim((string) ($cfg['driver'] ?? 'log')));
+        return $driver === 'smtp' || $driver === 'mail' ? $driver : 'log';
+    }
+
+    /** false = chế độ thử (driver log): thư chỉ ghi ra storage/mail, KHÔNG tới hộp thư của ai. */
+    public function sendsForReal(): bool
+    {
+        return $this->driver() !== 'log';
+    }
+
     public function send(string $to, string $subject, string $html, string $text = ''): void
     {
         $cfg = $this->cfg ?? (array) Config::get('mail', []);
-        $driver = (string) ($cfg['driver'] ?? 'log');
+        $driver = $this->driver();
         $fromEmail = (string) ($cfg['from_email'] ?? 'no-reply@localhost');
         $fromName = (string) ($cfg['from_name'] ?? 'PH Car Play');
 

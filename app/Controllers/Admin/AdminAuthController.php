@@ -96,8 +96,16 @@ final class AdminAuthController
         }
         $this->limiter->enforce('admin-forgot:e:' . $email, 5, 3600, 'Bạn đã yêu cầu đặt lại mật khẩu quá nhiều lần.');
         $this->limiter->enforce('admin-forgot:i:' . $request->ip, 20, 3600, 'Bạn đã yêu cầu đặt lại mật khẩu quá nhiều lần.');
-        $this->resets->request($email, $request->ip);
-        return Response::ok(['message' => 'Nếu email thuộc một quản trị viên, chúng tôi đã gửi liên kết đặt lại mật khẩu. Hãy kiểm tra hộp thư.']);
+        if ($this->resets->request($email, $request->ip) === 'failed') {
+            throw new HttpException(503, 'MAIL_FAILED', 'Hiện chưa gửi được email. Hãy thử lại sau ít phút, hoặc đặt lại mật khẩu master bằng lệnh php bin/reset-master.php trên máy chủ.');
+        }
+        $test = $this->resets->testMode();
+        return Response::ok([
+            'message' => $test
+                ? 'Website đang ở chế độ thử nên email KHÔNG được gửi thật. Nếu email thuộc một quản trị viên, thư chứa liên kết được ghi vào thư mục storage/mail trên máy chủ.'
+                : 'Nếu email thuộc một quản trị viên, chúng tôi đã gửi liên kết đặt lại mật khẩu. Hãy kiểm tra hộp thư.',
+            'test_mode' => $test,
+        ]);
     }
 
     public function reset(Request $request): Response

@@ -123,8 +123,13 @@ final class AdminUsersController
 
     public function sendReset(Request $request): Response
     {
-        $this->users->sendReset($request->attributes['admin'], $this->id($request), $request->ip);
-        return Response::ok(['message' => 'Đã gửi (hoặc xếp hàng gửi) thư đặt lại mật khẩu. Nếu vừa gửi trong 60 giây trước thì thư mới sẽ không gửi lại.']);
+        $result = $this->users->sendReset($request->attributes['admin'], $this->id($request), $request->ip);
+        $messages = [
+            'sent' => 'Đã gửi thư chứa mã đặt lại mật khẩu tới email của người dùng.',
+            'none' => 'Vừa gửi mã trong 60 giây trước nên chưa gửi lại. Hãy chờ một chút rồi bấm lại.',
+            'test' => 'Website đang ở chế độ thử nên email KHÔNG được gửi thật (thư chứa mã được ghi vào thư mục storage/mail trên máy chủ).',
+        ];
+        return Response::ok(['message' => $messages[$result], 'result' => $result]);
     }
 
     public function logoutDevice(Request $request): Response

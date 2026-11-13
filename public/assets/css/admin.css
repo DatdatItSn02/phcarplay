@@ -162,3 +162,8 @@
   .keycode { white-space: normal; }
   .plain-list li { flex-wrap: wrap; }
 }
+
+/* Giai đoạn 16: thẻ "Gửi email" trên trang Tổng quan (chỉ master) */
+.mail-card .mail-info { display: grid; gap: .75rem; }
+.mail-card .plain-list li > strong { font-weight: 600; text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.mail-card .mail-error { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .875rem; overflow-wrap: anywhere; }

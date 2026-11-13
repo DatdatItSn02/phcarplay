@@ -70,7 +70,7 @@ export function openSettings(ctx) {
       plan,
       h('div', { class: 'btn-row' },
         h('button', { type: 'button', class: 'btn', onclick: () => openAccountDialog({ api: ctx.api, session, onChange: (info) => { plan.textContent = describePlan(info); } }) }, icon('key'), 'Nhập key kích hoạt'),
-        h('button', { type: 'button', class: 'btn', onclick: () => openSecurityDialog({ authApi: createAuthApi(ctx.api), session, onPhone: paintPhone }) }, icon('shield'), 'Số điện thoại và mật khẩu'),
+        h('button', { type: 'button', class: 'btn', onclick: () => openSecurityDialog({ authApi: createAuthApi(ctx.api), session, onPhone: paintPhone }) }, icon('phone'), 'Số điện thoại đăng nhập'),
         h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { dlg.close(); ctx.onLogout(); } }, icon('logout'), 'Đăng xuất')));
   } else {
     account = section('Tài khoản', 'person',

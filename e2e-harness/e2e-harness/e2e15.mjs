@@ -8,7 +8,7 @@ const { chromium } = require(execSync('npm root -g').toString().trim() + '/playw
 
 // Giai đoạn 14 trên PHP THẬT (php -S + SQLite tạm) và Chromium thật:
 //  A. Tài khoản bằng số điện thoại: đăng ký bắt buộc SĐT (nhập có dấu cách), đăng nhập bằng SĐT dạng +84, quên mật khẩu bằng
-//     mã 6 số (thư ghi vào storage/mail), mã sai báo số lần còn lại, hộp "Số điện thoại và mật khẩu" trong Cài đặt
+//     mã 6 số (thư ghi vào storage/mail), mã sai báo số lần còn lại, hộp "Số điện thoại đăng nhập" trong Cài đặt (gđ 16: ẩn đổi mật khẩu)
 //     (đổi số, đổi mật khẩu bằng mã: thiết bị khác bị đăng xuất, máy này vẫn vào).
 //  B. Giao diện: bộ 3 nút ⏮ ▶ ⏭ nằm đúng giữa dưới video ở 4 cỡ màn hình; điện thoại dọc chỉ còn tên bài + thanh tua + 3 nút + "⋯";
 //     bấm ô tìm kiếm trên điện thoại: video thu thành thanh nhỏ ở trên, ẩn thanh mục dưới, ô tìm kiếm không đè lên nút; bấm Tìm thì trở lại.
@@ -136,7 +136,7 @@ await pc.getByLabel('Mật khẩu').fill('Moi-123456');
 await pc.getByRole('button', { name: 'Đăng nhập', exact: true }).last().click();
 check('A8 đăng nhập bằng SĐT + mật khẩu mới', await inApp(pc));
 
-// A9. thiết bị 2 đăng nhập lại; thiết bị 1 dùng Cài đặt > Số điện thoại và mật khẩu
+// A9. thiết bị 2 đăng nhập lại; thiết bị 1 dùng Cài đặt > Số điện thoại đăng nhập
 await pb.goto(ORIGIN + '/');
 await pb.getByLabel('Email hoặc số điện thoại').fill(EMAIL);
 await pb.getByLabel('Mật khẩu').fill('Moi-123456');
@@ -149,22 +149,26 @@ await pa.getByRole('button', { name: 'Đăng nhập', exact: true }).last().clic
 await inApp(pa);
 await pa.locator('.rail').getByRole('button', { name: 'Cài đặt' }).click();
 check('A9 Cài đặt hiện SĐT của tài khoản', await pa.getByText('SĐT: 0912345678').isVisible());
-await pa.getByRole('button', { name: 'Số điện thoại và mật khẩu' }).click();
+await pa.getByRole('button', { name: 'Số điện thoại đăng nhập' }).click();
 await pa.locator('#sec-phone').fill('098 765 4321');
 await pa.getByRole('button', { name: 'Lưu số mới' }).click();
 await sleep(600);
 check('A10 đổi số điện thoại', (await me(A)).user.phone === '0987654321' && (await pa.locator('#sec-phone').inputValue()) === '0987654321');
-await pa.getByRole('button', { name: 'Gửi mã đổi mật khẩu' }).click();
-await pa.locator('#sec-code').waitFor({ timeout: 5000 });
+// Giai đoạn 16: mục "Đổi mật khẩu" bị ẩn khỏi Cài đặt (API vẫn còn). Hộp chỉ còn số điện thoại + lời nhắc dùng "Quên mật khẩu?".
+const dlgText = await pa.getByRole('dialog').last().innerText();
+check('A11 hộp chỉ còn số điện thoại, ẩn phần đổi mật khẩu (không còn nút gửi mã, không còn ô mã/mật khẩu)',
+  (await pa.getByRole('button', { name: 'Gửi mã đổi mật khẩu' }).count()) === 0 && (await pa.locator('#sec-code, #sec-pw').count()) === 0
+  && dlgText.includes('Số điện thoại đăng nhập') && dlgText.includes('Quên mật khẩu?'));
+check('A11 không hiện email đầy đủ trong hộp', !dlgText.includes(EMAIL));
+await pa.screenshot({ path: path.join(here, 'shot-phase16-phone-only.png') });
+// Đổi mật khẩu bằng API (vẫn hoạt động), từ chính máy A
+const csrfA = (await (await A.request.get(ORIGIN + '/api/auth/me')).json()).data.csrf;
+const pc2 = await A.request.post(ORIGIN + '/api/user/password/code', { headers: { 'X-CSRF-Token': csrfA }, data: {} });
+const pc2j = await pc2.json();
+check('A11 chế độ thử: API báo rõ thư KHÔNG gửi thật', pc2.status() === 200 && pc2j.data.test_mode === true && pc2j.data.message.includes('KHÔNG được gửi thật'));
 const code2 = await latestCode(EMAIL);
-check('A11 mã đổi mật khẩu gửi qua email', Boolean(code2));
-await pa.locator('#sec-code').fill(code2);
-await pa.locator('#sec-pw').fill('Doi-654321');
-await pa.locator('#sec-pw2').fill('Doi-654321');
-await pa.getByRole('button', { name: 'Đổi mật khẩu', exact: true }).click();
-await pa.getByText('Đã đổi mật khẩu. Các thiết bị khác').waitFor({ timeout: 5000 }).catch(() => {});
-check('A11 đổi mật khẩu thành công', await pa.getByText('Đã đổi mật khẩu. Các thiết bị khác').isVisible());
-await pa.screenshot({ path: path.join(here, 'shot-phase14-security.png') });
+const chg = await A.request.post(ORIGIN + '/api/user/password', { headers: { 'X-CSRF-Token': csrfA }, data: { code: code2, password: 'Doi-654321' } });
+check('A11 API đổi mật khẩu vẫn dùng được', chg.status() === 200);
 check('A12 máy này vẫn đăng nhập, thiết bị khác bị đăng xuất', Boolean((await me(A)).user) && !(await me(B)).user && !(await me(C)).user);
 const fresh = await browser.newContext();
 const csrf = (await (await fresh.request.get(ORIGIN + '/api/auth/me')).json()).data.csrf;

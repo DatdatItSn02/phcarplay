@@ -35,15 +35,18 @@ final class AdminPasswordResetService
         $this->audit = $audit;
     }
 
-    /** Luôn im lặng nếu email không tồn tại hoặc tài khoản bị khóa, để không lộ ai là quản trị viên. */
-    public function request(string $email, string $ip): void
+    /**
+     * Luôn im lặng nếu email không tồn tại hoặc tài khoản bị khóa, để không lộ ai là quản trị viên.
+     * @return string 'sent' | 'failed' (không gửi được email - giai đoạn 16) | 'none'
+     */
+    public function request(string $email, string $ip): string
     {
         $admin = $this->admins->findByEmail($email);
         if ($admin === null || $admin['status'] !== 'active') {
-            return;
+            return 'none';
         }
         if ($this->resets->countRecent('admin', (int) $admin['id'], 60) > 0) {
-            return;
+            return 'none';
         }
         $ttl = (int) Config::get('app.auth.reset_ttl_minutes', 60);
         $raw = bin2hex(random_bytes(32));
@@ -64,8 +67,17 @@ final class AdminPasswordResetService
             $this->mailer->send($admin['email'], 'Đặt lại mật khẩu quản trị ' . $appName, $html, $text);
         } catch (\Throwable $e) {
             Logger::error('Gửi mail quên mật khẩu admin thất bại: ' . $e->getMessage(), ['admin_id' => $admin['id']]);
+            $this->audit->record($admin, 'admin.password_forgot', 'admin', $admin['id'], 'KHÔNG gửi được liên kết đặt lại mật khẩu (lỗi gửi email)', $ip);
+            return 'failed';
         }
         $this->audit->record($admin, 'admin.password_forgot', 'admin', $admin['id'], 'đã gửi liên kết đặt lại mật khẩu', $ip);
+        return 'sent';
+    }
+
+    /** Website đang ở chế độ thử (MAIL_DRIVER=log): thư không gửi thật. */
+    public function testMode(): bool
+    {
+        return !$this->mailer->sendsForReal();
     }
 
     public function reset(string $rawToken, string $newPassword, string $ip): void

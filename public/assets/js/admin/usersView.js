@@ -150,7 +150,7 @@ export function mountUsers(el, ctx) {
   function confirmSimple({ title, message, label, action, okMsg, danger = false }, done) {
     confirmDialog({
       title, message, confirmLabel: label, danger,
-      onConfirm: async () => { await action(); showToast(okMsg); done(); },
+      onConfirm: async () => { const data = await action(); showToast((data && data.message) || okMsg); done(); },
     });
   }
 

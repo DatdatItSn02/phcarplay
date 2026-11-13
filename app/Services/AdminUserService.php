@@ -148,14 +148,22 @@ final class AdminUserService
     }
 
     /** Gửi mã OTP đặt lại mật khẩu tới email người dùng (cùng luồng "quên mật khẩu"; tối đa 1 mã mỗi 60 giây). */
-    public function sendReset(array $actor, int $id, string $ip): void
+    /** @return string 'sent' | 'none' (vừa gửi trong 60 giây trước) | 'test' (chế độ thử, thư không gửi thật) */
+    public function sendReset(array $actor, int $id, string $ip): string
     {
         $target = $this->mustFind($id);
         if ($target['status'] !== 'active') {
             throw new HttpException(409, 'USER_BLOCKED', 'Tài khoản đang bị khóa nên không gửi được thư đặt lại mật khẩu.');
         }
-        $this->resetMail->request($target['email']);
-        $this->audit->record($actor, 'user.reset_sent', 'user', $id, 'email: ' . $target['email'], $ip);
+        $result = $this->resetMail->request($target['email']);
+        if ($result === 'failed') {
+            throw new HttpException(502, 'MAIL_FAILED', 'Không gửi được thư chứa mã tới ' . $target['email'] . '. Hãy kiểm tra cấu hình gửi email ở trang Tổng quan (mục "Gửi email").');
+        }
+        if ($result === 'sent') {
+            $this->audit->record($actor, 'user.reset_sent', 'user', $id, 'email: ' . $target['email'], $ip);
+            return $this->resetMail->testMode() ? 'test' : 'sent';
+        }
+        return 'none';
     }
 
     /** Đăng xuất thiết bị đang đăng nhập của người dùng (họ vẫn đăng nhập lại được). */

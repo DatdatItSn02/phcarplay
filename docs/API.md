@@ -11,10 +11,10 @@ Thành công: `{"ok":true,"data":...}`. Lỗi: `{"ok":false,"error":{"code","mes
 | `POST /auth/register` | `{email, phone, name?, password}` | 201 như `/auth/me` và tự đăng nhập. `phone` bắt buộc (giai đoạn 14): số di động VN 10 số bắt đầu bằng 0 (nhận cả `+84`/`84`, dấu cách, dấu chấm, gạch nối; lưu dạng `0xxxxxxxxx`). 422 `VALIDATION_FAILED`, 409 `EMAIL_TAKEN`, 409 `PHONE_TAKEN` |
 | `POST /auth/login` | `{login, password}` | `login` là email **hoặc** số điện thoại (vẫn nhận `{email, password}` cũ). Như `/auth/me`. 401 `INVALID_CREDENTIALS`, 403 `ACCOUNT_BLOCKED` |
 | `POST /auth/logout` | - | `{csrf}` (token mới) |
-| `POST /auth/forgot` | `{login}` (hoặc `{email}`) | Giai đoạn 14: gửi **mã 6 số** (hết hạn sau `OTP_TTL_MINUTES`, mặc định 10 phút) tới email của tài khoản; SMS khi đã bật `SMS_DRIVER`. Luôn trả `{message, resend_after, expires_in}` giống nhau dù tài khoản có hay không. Mỗi tài khoản tối đa 1 mã/60 giây |
+| `POST /auth/forgot` | `{login}` (hoặc `{email}`) | Giai đoạn 14: gửi **mã 6 số** (hết hạn sau `OTP_TTL_MINUTES`, mặc định 10 phút) tới email của tài khoản; SMS khi đã bật `SMS_DRIVER`. Luôn trả `{message, resend_after, expires_in, test_mode}` giống nhau dù tài khoản có hay không. Mỗi tài khoản tối đa 1 mã/60 giây. Giai đoạn 16: `test_mode: true` khi `MAIL_DRIVER=log` (thư không gửi thật, câu `message` nói rõ); không gửi được qua kênh nào thì 503 `MAIL_FAILED` và mã bị hủy để bấm lại được ngay |
 | `POST /auth/reset` | `{login, code, password}` | Đặt mật khẩu mới bằng mã. `{message}`; mọi thiết bị bị đăng xuất. 400 `OTP_INVALID` (sai tài khoản, hết hạn, đã dùng), 400 `OTP_WRONG` (`details.code`: còn N lần), 400 `OTP_LOCKED` (sai 5 lần, mã bị hủy), 422. Tối đa 60 lần/giờ mỗi IP. Vẫn nhận `{token, password}` của liên kết cũ (400 `TOKEN_INVALID`) |
 | `PUT /user/phone` | `{phone}` | Cần đăng nhập. Thêm/đổi số điện thoại đăng nhập. Trả như `/auth/me`. 422, 409 `PHONE_TAKEN` |
-| `POST /user/password/code` | - | Cần đăng nhập. Gửi mã đổi mật khẩu tới email (và SMS khi đã bật). `{message, resend_after, expires_in}`. 429 `OTP_TOO_SOON` (`details.retry_after` giây) |
+| `POST /user/password/code` | - | Cần đăng nhập. Gửi mã đổi mật khẩu tới email (và SMS khi đã bật). `{message, resend_after, expires_in, delivered, test_mode}`. 429 `OTP_TOO_SOON` (`details.retry_after` giây); 503 `MAIL_FAILED` khi thư không đi (giai đoạn 16). Giai đoạn 16: giao diện Cài đặt đã ẩn mục đổi mật khẩu, API vẫn giữ |
 | `POST /user/password` | `{code, password}` | Cần đăng nhập. Đổi mật khẩu bằng mã: thiết bị này vẫn đăng nhập (phiên mới), các thiết bị khác bị đăng xuất. Trả `{message}` + như `/auth/me`. Lỗi mã như `/auth/reset` |
 | `GET /user/preferences` | - | Cần đăng nhập. `{layout: {h, v} \| null}` (null nếu chưa từng lưu) |
 | `GET /user/youtube-key` | - | Cần đăng nhập (giai đoạn 10). `{enabled, reason, has_key, last4, updated_at, state}`. `state`: `ok`, `quota` (hết lượt hôm nay), `invalid`, `unreadable` (APP_KEY đã đổi) hoặc null. Không bao giờ trả khóa đầy đủ |
@@ -91,7 +91,7 @@ Ba lớp kiểm tra quyền, chạy theo thứ tự: `RequireAdmin` (đã đăng
 | `GET /auth/me` | công khai | - | `{admin\|null, csrf}`. `admin` = `{id, email, name, role, status, must_change_password, last_login_at, created_at}` (không bao giờ có hash/salt) |
 | `POST /auth/login` | công khai | `{email, password}` | như `/auth/me`. 401 `INVALID_CREDENTIALS`, 403 `ACCOUNT_BLOCKED`. Đổi ID phiên sau khi đăng nhập; ghi nhật ký `admin.login` |
 | `POST /auth/logout` | công khai | - | `{csrf}` (token mới), hủy phiên |
-| `POST /auth/forgot` | công khai | `{email}` | Luôn `{message}` nếu email đúng định dạng. Chỉ gửi thư khi là admin đang hoạt động; tối đa 1 thư/60 giây. Liên kết: `APP_URL/admin/reset-password?token=...` |
+| `POST /auth/forgot` | công khai | `{email}` | Luôn `{message, test_mode}` nếu email đúng định dạng (503 `MAIL_FAILED` khi là admin thật mà thư không đi - giai đoạn 16). Chỉ gửi thư khi là admin đang hoạt động; tối đa 1 thư/60 giây. Liên kết: `APP_URL/admin/reset-password?token=...` |
 | `POST /auth/reset` | công khai | `{token, password}` | `{message}`. 400 `TOKEN_INVALID` (sai, hết hạn, đã dùng, hoặc là token của người dùng), 422 |
 | `POST /account/password` | đã đăng nhập (kể cả đang bị buộc đổi) | `{current_password, new_password}` | như `/auth/me` với phiên đã làm mới. 422 nếu sai mật khẩu hiện tại hoặc mật khẩu mới trùng cũ. Gỡ cờ `must_change_password`; các phiên khác của tài khoản bị đăng xuất |
 | `GET /admins` | master | - | `{items: [admin]}` master đứng đầu |
@@ -108,6 +108,8 @@ Quyền: **mọi admin** đã đổi mật khẩu tạm dùng được `/stats`,
 
 | Phương thức, đường dẫn | Body / tham số | Kết quả / lỗi |
 |---|---|---|
+| `GET /mail` | - | Giai đoạn 16, **chỉ master**. `{driver, driver_label, test_mode, from_email, from_name, smtp: {host, port, encryption, username_set, password_set} \| null, problems: [..]}`. Không bao giờ trả mật khẩu SMTP |
+| `POST /mail/test` | `{email}` | Giai đoạn 16, **chỉ master**, tối đa 10 lần/giờ. Gửi thư thử: `{ok, test_mode, message, status}`; thất bại 502 `MAIL_TEST_FAILED` với `details: {error, hint}` (lỗi của máy chủ thư + gợi ý cách sửa). Ghi nhật ký `mail.test` |
 | `GET /stats` | - | `{users: {total, active, blocked, new_7d, license_valid, license_expired, license_none}, keys: {unused, used, revoked}, playlists: {playlists, items}, admins: {total}, recent}`. `recent` là 8 thao tác gần nhất, **chỉ master** có (admin thường: `null`) |
 | `GET /users` | `q` (email hoặc tên), `status` (`active`/`blocked`), `license` (`valid`/`expired`/`none`) | `{items: [user], total, page, per_page}`. `user` = `{id, email, name, status, expires_at, license, last_login_at, created_at, device\|null, playlist_count}`, không bao giờ có hash, salt hay dấu phiên. 422 nếu `status`/`license` lạ |
 | `GET /users/{id}` | - | `user` kèm `device: {label, ip, since}\|null`, `playlists: [{id, name, count, updated_at}]`, `keys: [key]` (các key người này đã nhập, dạng như ở `/keys`). 404 |

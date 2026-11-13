@@ -31,7 +31,7 @@ export function mountAdminAuth(root, ctx) {
           submit: async (v) => {
             const data = await ctx.adminApi.forgot(v.email);
             clear(holder);
-            holder.append(message(data.message));
+            holder.append(message(data.message, data.test_mode ? 'notice-warn' : ''));
           } }),
         holder,
         h('div', { class: 'row-links' }, linkButton('Quay lại đăng nhập', () => go('login'))),

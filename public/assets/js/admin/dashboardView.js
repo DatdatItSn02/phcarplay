@@ -1,5 +1,6 @@
 import { h, clear, fmtDateTime, loading } from './ui.js';
 import { actionLabel, targetLabel } from './labels.js';
+import { mailCard } from './mailCard.js';
 
 function stat(label, value, hint = '', kind = '') {
   return h('div', { class: `stat ${kind}`.trim() },
@@ -12,6 +13,8 @@ function stat(label, value, hint = '', kind = '') {
 export function mountDashboard(el, ctx) {
   const body = h('div', { class: 'adm-body' }, loading());
   let alive = true;
+  // Giai đoạn 16: thẻ kiểm tra gửi email (chỉ master). Dựng một lần, không vẽ lại khi bấm "Làm mới" để giữ kết quả gửi thử.
+  const mail = ctx.admin && ctx.admin.role === 'master' ? mailCard(ctx) : null;
 
   function card(title, tiles, link) {
     return h('section', { class: 'card' },
@@ -46,6 +49,7 @@ export function mountDashboard(el, ctx) {
           stat('Bài trong playlist', d.playlists.items),
           stat('Quản trị viên', d.admins.total),
         ], { path: '/playlists', label: 'Xem playlist' })),
+      mail ? mail.el : null,
       d.recent ? recent(d.recent) : null);
   }
 
@@ -82,5 +86,5 @@ export function mountDashboard(el, ctx) {
       h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => { clear(body); body.append(loading()); load(); } }, 'Làm mới')),
     body);
   load();
-  return () => { alive = false; };
+  return () => { alive = false; if (mail) mail.destroy(); };
 }

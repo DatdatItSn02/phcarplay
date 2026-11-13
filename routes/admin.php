@@ -5,6 +5,7 @@ use App\Controllers\Admin\AdminAccountsController;
 use App\Controllers\Admin\AdminAuditController;
 use App\Controllers\Admin\AdminAuthController;
 use App\Controllers\Admin\AdminKeysController;
+use App\Controllers\Admin\AdminMailController;
 use App\Controllers\Admin\AdminPlaylistsController;
 use App\Controllers\Admin\AdminStatsController;
 use App\Controllers\Admin\AdminUsersController;
@@ -63,5 +64,9 @@ return function (Router $router): void {
         $r->post('/admins/{id}/password', [AdminAccountsController::class, 'setPassword']);
 
         $r->get('/audit', [AdminAuditController::class, 'index']);
+
+        // Giai đoạn 16: kiểm tra việc gửi email
+        $r->get('/mail', [AdminMailController::class, 'status']);
+        $r->post('/mail/test', [AdminMailController::class, 'test']);
     });
 };

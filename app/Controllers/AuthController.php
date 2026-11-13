@@ -155,9 +155,15 @@ final class AuthController
         // Chống dùng chức năng này để gửi thư dồn dập vào hộp thư của người khác.
         $this->limiter->enforce('forgot:e:' . $loginId[1], 5, 3600, 'Bạn đã yêu cầu đặt lại mật khẩu quá nhiều lần.');
         $this->limiter->enforce('forgot:i:' . $request->ip, 20, 3600, 'Bạn đã yêu cầu đặt lại mật khẩu quá nhiều lần.');
-        $this->resets->request($loginId[1]);
+        if ($this->resets->request($loginId[1]) === 'failed') {
+            throw self::mailFailed();
+        }
+        $test = $this->otp->testMode();
         return Response::ok([
-            'message' => 'Nếu tài khoản tồn tại, mã 6 số đã được gửi tới email đã đăng ký. Hãy kiểm tra hộp thư (cả mục Thư rác).',
+            'message' => $test
+                ? 'Website đang ở chế độ thử nên email KHÔNG được gửi thật. Nếu tài khoản tồn tại, thư chứa mã được ghi vào thư mục storage/mail trên máy chủ.'
+                : 'Nếu tài khoản tồn tại, mã 6 số đã được gửi tới email đã đăng ký. Hãy kiểm tra hộp thư (cả mục Thư rác).',
+            'test_mode' => $test,
             'resend_after' => OtpService::RESEND_SECONDS,
             'expires_in' => OtpService::ttlMinutes() * 60,
         ]);
@@ -202,10 +208,21 @@ final class AuthController
         }
         $this->limiter->enforce('otp-change:u:' . $user['id'], 10, 3600, 'Bạn đã xin mã quá nhiều lần.');
         $sent = $this->otp->issue($user, 'change');
+        if (!$sent['delivered']) {
+            throw self::mailFailed();
+        }
         return Response::ok($sent + [
             'resend_after' => OtpService::RESEND_SECONDS,
-            'message' => 'Đã gửi mã 6 số tới email ' . $sent['email'] . '.',
+            'message' => $sent['test_mode']
+                ? 'Website đang ở chế độ thử nên email KHÔNG được gửi thật. Thư chứa mã được ghi vào thư mục storage/mail trên máy chủ.'
+                : 'Đã gửi mã 6 số tới email ' . $sent['email'] . '.',
         ]);
+    }
+
+    /** Giai đoạn 16: không gửi được mã qua kênh nào - báo thật thay vì "Đã gửi". Nguyên nhân cụ thể nằm trong storage/logs/app.log. */
+    private static function mailFailed(): HttpException
+    {
+        return new HttpException(503, 'MAIL_FAILED', 'Hiện chưa gửi được email chứa mã. Hãy thử lại sau ít phút hoặc liên hệ quản trị viên.');
     }
 
     /** Đổi mật khẩu bằng mã OTP. Máy đang dùng vẫn đăng nhập, các máy khác bị đăng xuất. */

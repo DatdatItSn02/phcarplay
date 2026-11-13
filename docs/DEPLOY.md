@@ -72,7 +72,7 @@ sudo -u www-data php bin/doctor.php
 | `APP_DEBUG` | **`false`**. `true` chỉ dùng trên máy mình khi phát triển (hiện chi tiết lỗi) |
 | `APP_BASE_PATH` | Để trống, trừ khi website nằm trong thư mục con (`/carweb`) |
 | `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` | Theo database đã tạo. Trên cPanel tên có tiền tố tài khoản, ví dụ `user_carweb` |
-| `MAIL_DRIVER` | `smtp`, kèm `SMTP_HOST`, `SMTP_PORT` (587 với `SMTP_ENCRYPTION=tls`, hoặc 465 với `ssl`), `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM_EMAIL`. Thử: `php bin/send-test-mail.php email@cua-ban.com` |
+| `MAIL_DRIVER` | `smtp`, kèm `SMTP_HOST`, `SMTP_PORT` (587 với `SMTP_ENCRYPTION=tls`, hoặc 465 với `ssl`), `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM_EMAIL`. Thử: `php bin/send-test-mail.php email@cua-ban.com`, hoặc (giai đoạn 16) đăng nhập trang quản trị bằng master > Tổng quan > thẻ **Gửi email** > **Gửi thư thử** (hiện lỗi cụ thể và cách sửa). Gmail: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_ENCRYPTION=tls`, `SMTP_PASS` là "Mật khẩu ứng dụng" 16 ký tự (bật Xác minh 2 bước trước), `MAIL_FROM_EMAIL` trùng `SMTP_USER`. Để `MAIL_DRIVER=log` thì thư chỉ ghi vào `storage/mail`, người dùng KHÔNG nhận được mã |
 | `VIDEO_SOURCES` | `piped,invidious` (mặc định): thử Piped trước, Invidious dự phòng |
 | `APP_KEY` | Mã bí mật để mã hóa khóa YouTube API của người dùng trong database. `php bin/doctor.php` gợi ý sẵn một mã ngẫu nhiên. Giữ bí mật, không đổi về sau (đổi thì người dùng phải nhập lại khóa) |
 | `YOUTUBE_USER_KEYS` | `true` (mặc định): người dùng có tài khoản tự nhập khóa YouTube Data API riêng trong Cài đặt. Khóa chỉ dùng cho tìm kiếm của chính người đó, được thử với Google trước khi lưu, mã hóa bằng `APP_KEY`, không bao giờ hiện lại đầy đủ. Khóa hết lượt/sai thì tìm bằng cách khác kèm thông báo nhẹ. Lưu ý: điều khoản YouTube API yêu cầu mỗi ứng dụng một project và không cho chủ khóa đưa khóa cho bên thứ ba, nên dùng khóa của người dùng là có rủi ro bị Google khóa các khóa đó |
@@ -116,7 +116,9 @@ Riêng lần cập nhật lên bản giai đoạn 15 (đợt 2 - chiếu màn h�
 
 Riêng lần cập nhật lên bản giai đoạn 15 (đợt 1 - nghe nhạc trong nền): không có migration mới, không đổi `.env`. Tải website lên như mọi khi, **và build lại cả hai ứng dụng** (bản 1.1.0, `versionCode` 2 - đã sửa sẵn trong `mobile/config/app.json`; nhớ giữ nguyên `webUrl` thật của bạn). Ứng dụng bản cũ 1.0.0 vẫn chạy với website mới (ra nền thì dừng như trước, Cài đặt nhắc cài bản mới).
 
-Riêng lần cập nhật lên bản giai đoạn 14: **phải chạy `php bin/migrate.php`** (migration `010_user_phone_otp.sql` thêm cột `phone` vào `users` và bảng `otp_codes`; không đụng dữ liệu cũ). Có thể thêm `OTP_TTL_MINUTES=10` và `SMS_DRIVER=none` vào `.env` (không thêm cũng chạy với giá trị đó). Đăng ký mới bắt buộc số điện thoại; tài khoản cũ vẫn đăng nhập bằng email và tự thêm số trong Cài đặt > "Số điện thoại và mật khẩu". Quên/đổi mật khẩu gửi mã 6 số qua email, nên website thật cần `MAIL_DRIVER=smtp` (hoặc `mail`). Không phải build lại ứng dụng Android/iOS.
+Riêng lần cập nhật lên bản giai đoạn 14: **phải chạy `php bin/migrate.php`** (migration `010_user_phone_otp.sql` thêm cột `phone` vào `users` và bảng `otp_codes`; không đụng dữ liệu cũ). Có thể thêm `OTP_TTL_MINUTES=10` và `SMS_DRIVER=none` vào `.env` (không thêm cũng chạy với giá trị đó). Đăng ký mới bắt buộc số điện thoại; tài khoản cũ vẫn đăng nhập bằng email và tự thêm số trong Cài đặt > "Số điện thoại đăng nhập". Quên/đổi mật khẩu gửi mã 6 số qua email, nên website thật cần `MAIL_DRIVER=smtp` (hoặc `mail`). Không phải build lại ứng dụng Android/iOS.
+
+Riêng lần cập nhật lên bản giai đoạn 16: không có migration. Chép đè các file; mục "Đổi mật khẩu" trong Cài đặt của người dùng được ẩn (đổi bằng "Quên mật khẩu?"). Kiểm tra gửi email ở trang quản trị > Tổng quan > **Gửi email**. Không phải build lại ứng dụng Android/iOS.
 
 Riêng lần cập nhật lên bản giai đoạn 13: không có migration mới, không đổi `.env`. Website nhận ra khi được mở trong ứng dụng Android/iOS (thư mục `mobile/`, hướng dẫn build ở `mobile/README.md`). Nhớ tải lên cả `public/.htaccess` mới (thêm `Cache-Control: no-cache` cho JS/CSS). **Từ giai đoạn này:** thay đổi chỉ ở website thì ứng dụng nhận ngay khi mở lại, không phải build lại; thay đổi trong `mobile/` thì phải build lại ứng dụng (tăng `versionCode` trong `mobile/config/app.json`).
 
@@ -154,6 +156,6 @@ Riêng lần cập nhật lên bản giai đoạn 8: **phải chạy `php bin/mi
 | Một tính năng không chạy, bảng điều khiển trình duyệt (F12) báo "Content Security Policy" | Đặt tạm `CSP_ENABLED=false` để xác nhận, rồi gửi nội dung lỗi để sửa; nhớ bật lại |
 | Người dùng báo bị tạm chặn (đăng nhập khi đã bật `LOGIN_THROTTLE`, quên mật khẩu, nhập key) | Chờ hết thời gian báo trên màn hình, hoặc xóa file trong `storage/cache/ratelimit/` |
 | Bị đăng xuất liên tục | Mỗi tài khoản chỉ một thiết bị (`SINGLE_DEVICE_LOGIN`); kiểm tra `storage/sessions` ghi được |
-| Không nhận được thư | `php bin/send-test-mail.php email@cua-ban.com`, xem lỗi; kiểm tra thư rác; dùng SMTP thay cho `mail` |
+| Không nhận được thư | Trang quản trị > Tổng quan > **Gửi email** > Gửi thư thử (hoặc `php bin/send-test-mail.php email@cua-ban.com`), xem lỗi; kiểm tra `MAIL_DRIVER` không phải `log`; kiểm tra thư rác; dùng SMTP thay cho `mail` |
 | Giờ trong nhật ký lệch | Kiểm tra `APP_TIMEZONE` (mặc định `Asia/Ho_Chi_Minh`) |
 | Quên mật khẩu master và không nhận thư | Trên máy chủ: `php bin/reset-master.php --password=MatKhauMoi123` |

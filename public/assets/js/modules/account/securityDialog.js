@@ -4,10 +4,12 @@ import { openDialog } from '../../core/dialog.js';
 import { showToast } from '../../core/toast.js';
 import { CODE_INPUT, cleanCode, countdownButton } from '../auth/otpParts.js';
 
-// Giai đoạn 14: "Số điện thoại và mật khẩu" trong Cài đặt > Tài khoản.
-//  - Thêm / đổi số điện thoại đăng nhập (tài khoản tạo trước khi có số điện thoại).
-//  - Đổi mật khẩu bằng mã OTP 6 số gửi qua email (SMS khi đã tích hợp).
+// "Số điện thoại đăng nhập" trong Cài đặt > Tài khoản (giai đoạn 14): thêm / đổi số điện thoại đăng nhập.
+// Giai đoạn 16: mục "Đổi mật khẩu" (mã 6 số gửi qua email) được ẨN theo yêu cầu - người dùng đổi mật khẩu bằng
+// "Quên mật khẩu?" ở màn hình đăng nhập. Mã nguồn và API (/user/password/code, /user/password) vẫn giữ nguyên:
+// muốn hiện lại chỉ cần đổi SHOW_CHANGE_PASSWORD thành true.
 // ctx: { authApi, session, onPhone(phone) }. Trả về { close }.
+const SHOW_CHANGE_PASSWORD = false;
 
 function inputField({ id, label, hint = '', attrs = {} }) {
   const input = h('input', Object.assign({ id, class: 'input', 'aria-describedby': `${id}-err` }, attrs));
@@ -26,7 +28,7 @@ async function busy(button, label, work) {
   try { return await work(); } finally { button.disabled = false; button.textContent = old; }
 }
 
-export function openSecurityDialog({ authApi, session, onPhone = null }) {
+export function openSecurityDialog({ authApi, session, onPhone = null, showPassword = SHOW_CHANGE_PASSWORD }) {
   const user = session.user;
 
   // ----- số điện thoại -----
@@ -52,7 +54,15 @@ export function openSecurityDialog({ authApi, session, onPhone = null }) {
     });
   } }, phone.el, phoneBtn);
 
-  // ----- đổi mật khẩu -----
+  if (!showPassword) {
+    return openDialog({
+      title: 'Số điện thoại đăng nhập',
+      content: h('div', { class: 'form security' }, phoneForm,
+        h('p', { class: 'hint' }, 'Muốn đổi mật khẩu: đăng xuất rồi bấm "Quên mật khẩu?" ở màn hình đăng nhập.')),
+    });
+  }
+
+  // ----- đổi mật khẩu (đang ẩn, xem SHOW_CHANGE_PASSWORD) -----
   const pwBox = h('div', { class: 'form' });
   const status = h('div', { 'aria-live': 'polite' });
   const sendBtn = h('button', { class: 'btn', type: 'button' }, 'Gửi mã đổi mật khẩu');
@@ -62,7 +72,7 @@ export function openSecurityDialog({ authApi, session, onPhone = null }) {
     clear(status);
     try {
       const data = await authApi.passwordCode();
-      status.append(h('div', { class: 'notice', role: 'status' }, h('p', {}, data.message || 'Đã gửi mã.')));
+      status.append(h('div', { class: data.test_mode ? 'notice notice-warn' : 'notice', role: 'status' }, h('p', {}, data.message || 'Đã gửi mã.')));
       showCodeForm();
       resend.start(data.resend_after || 60);
       const c = pwBox.querySelector('#sec-code');
@@ -113,7 +123,7 @@ export function openSecurityDialog({ authApi, session, onPhone = null }) {
     pwBox.append(codeForm);
   }
   sendBtn.addEventListener('click', () => busy(sendBtn, 'Đang gửi...', () => requestCode(sendBtn)));
-  pwBox.append(h('p', { class: 'hint' }, `Mã 6 số sẽ được gửi tới email ${user.email}.`), status, sendBtn);
+  pwBox.append(h('p', { class: 'hint' }, 'Mã 6 số sẽ được gửi tới email của tài khoản.'), status, sendBtn);
 
   return openDialog({
     title: 'Số điện thoại và mật khẩu',

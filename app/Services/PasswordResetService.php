@@ -37,17 +37,25 @@ final class PasswordResetService
     /**
      * Quên mật khẩu (giai đoạn 14): gửi MÃ OTP 6 số tới email (và SMS khi đã bật) của tài khoản có email hoặc số điện thoại này.
      * Luôn im lặng khi không có tài khoản, tài khoản bị khóa hoặc vừa xin mã chưa đủ 60 giây, để không lộ ai đã đăng ký.
+     * @return string 'sent' (đã gửi) | 'failed' (không gửi được qua kênh nào - giai đoạn 16) | 'none' (im lặng, không gửi gì)
      */
-    public function request(string $login): void
+    public function request(string $login): string
     {
         $user = $this->auth->findByLogin($login);
         if ($user === null || $user['status'] !== 'active') {
-            return;
+            return 'none';
         }
         if ($this->otp->waitSeconds($user, 'reset') > 0) {
-            return;
+            return 'none';
         }
-        $this->otp->issue($user, 'reset');
+        $sent = $this->otp->issue($user, 'reset');
+        return $sent['delivered'] ? 'sent' : 'failed';
+    }
+
+    /** Website đang ở chế độ thử (thư không gửi thật). */
+    public function testMode(): bool
+    {
+        return $this->otp->testMode();
     }
 
     /** Đặt mật khẩu mới bằng mã OTP; đăng xuất mọi thiết bị. */

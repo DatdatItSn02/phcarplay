@@ -46,9 +46,16 @@ final class OtpService
         return max(0, $left);
     }
 
+    /** true = website đang ở chế độ thử (MAIL_DRIVER=log): thư chỉ ghi ra storage/mail, không tới hộp thư. */
+    public function testMode(): bool
+    {
+        return !$this->mailer->sendsForReal();
+    }
+
     /**
      * Tạo mã mới và gửi. Gọi waitSeconds() trước để chống gửi dồn dập.
-     * @return array{channels:array<int,string>,email:string,expires_in:int}
+     * delivered = false khi không kênh nào gửi được (giai đoạn 16): mã bị hủy ngay để người dùng bấm gửi lại được, không phải chờ 60 giây.
+     * @return array{channels:array<int,string>,email:string,expires_in:int,delivered:bool,test_mode:bool}
      */
     public function issue(array $user, string $purpose): array
     {
@@ -74,19 +81,28 @@ final class OtpService
             . '<p style="font-size:28px;font-weight:bold;letter-spacing:6px">' . $code . '</p>'
             . '<p>Mã có hiệu lực ' . $ttl . ' phút và chỉ dùng được một lần. Không đưa mã này cho bất kỳ ai.</p>'
             . '<p>Nếu bạn không yêu cầu, hãy bỏ qua email này: mật khẩu của bạn không thay đổi.</p>';
+        $delivered = false;
         try {
             $this->mailer->send((string) $user['email'], 'Mã ' . $what . ' ' . $appName . ': ' . $code, $html, $text);
+            $delivered = true;
         } catch (\Throwable $e) {
             Logger::error('Gửi mail mã OTP thất bại: ' . $e->getMessage(), ['user_id' => $id]);
         }
         if (in_array('sms', $channels, true)) {
             try {
                 $this->sms->send($phone, $appName . ': ma ' . $code . ' (hieu luc ' . $ttl . ' phut). Khong dua ma cho ai.');
+                $delivered = true;
             } catch (\Throwable $e) {
                 Logger::error('Gửi SMS mã OTP thất bại: ' . $e->getMessage(), ['user_id' => $id]);
             }
         }
-        return ['channels' => $channels, 'email' => self::maskEmail((string) $user['email']), 'expires_in' => $ttl * 60];
+        if (!$delivered) {
+            $this->codes->closeAll('user', $id, $purpose);
+        }
+        return [
+            'channels' => $channels, 'email' => self::maskEmail((string) $user['email']), 'expires_in' => $ttl * 60,
+            'delivered' => $delivered, 'test_mode' => $this->testMode(),
+        ];
     }
 
     /** Kiểm tra mã; đúng thì đánh dấu đã dùng. Sai thì ném lỗi tiếng Việt kèm số lần thử còn lại. */

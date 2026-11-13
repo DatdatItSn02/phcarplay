@@ -37,7 +37,13 @@ final class SmtpTransport
             $this->command('EHLO ' . $domain, 250);
             if ($enc === 'tls') {
                 $this->command('STARTTLS', 220);
-                if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                $method = STREAM_CRYPTO_METHOD_TLS_CLIENT;
+                foreach (['STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT', 'STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT'] as $name) {
+                    if (defined($name)) {
+                        $method |= constant($name);
+                    }
+                }
+                if (!@stream_socket_enable_crypto($fp, true, $method)) {
                     throw new \RuntimeException('Không bật được mã hóa TLS với máy chủ SMTP.');
                 }
                 $this->command('EHLO ' . $domain, 250);
@@ -78,6 +84,9 @@ final class SmtpTransport
             if (strlen($line) < 4 || $line[3] === ' ') {
                 break;
             }
+        }
+        if ($reply === '') {
+            throw new \RuntimeException('Máy chủ SMTP không trả lời (hết thời gian chờ hoặc bị ngắt kết nối).');
         }
         $code = (int) substr($reply, 0, 3);
         if (!in_array($code, $codes, true)) {

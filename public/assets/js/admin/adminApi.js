@@ -39,6 +39,9 @@ export function createAdminApi(api, hooks = {}) {
     deleteAdmin: (id) => guard(api.delete(`/admins/${id}`)),
 
     stats: () => guard(api.get('/stats')),
+    // Giai đoạn 16 (master): cấu hình gửi email đang dùng và gửi thư thử
+    mailStatus: () => guard(api.get('/mail')),
+    mailTest: (email) => guard(api.post('/mail/test', { email })),
 
     listUsers: (params) => guard(api.get(`/users${qs(params)}`)),
     getUser: (id) => guard(api.get(`/users/${id}`)),

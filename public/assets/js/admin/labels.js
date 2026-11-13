@@ -23,13 +23,14 @@ const ACTIONS = {
   'key.bulk_revoke': 'Thu hồi nhiều key',
   'key.bulk_delete': 'Xóa nhiều key',
   'playlist.delete': 'Xóa playlist',
+  'mail.test': 'Gửi thư thử',
 };
 
 export function actionLabel(action) {
   return Object.prototype.hasOwnProperty.call(ACTIONS, action) ? ACTIONS[action] : action;
 }
 
-const TARGETS = { admin: 'Quản trị viên', user: 'Người dùng', key: 'Key', playlist: 'Playlist' };
+const TARGETS = { admin: 'Quản trị viên', user: 'Người dùng', key: 'Key', playlist: 'Playlist', mail: 'Gửi email' };
 
 export function targetLabel(type, id) {
   if (!type) return '';
