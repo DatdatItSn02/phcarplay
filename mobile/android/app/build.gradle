@@ -1,0 +1,97 @@
+import groovy.json.JsonSlurper
+
+plugins {
+    id 'com.android.application'
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cấu hình chung cho Android và iOS: mobile/config/app.json
+//   webUrl      địa chỉ website thật (https://...), ứng dụng mở trang này
+//   appName     tên hiện dưới biểu tượng ứng dụng
+//   appId       mã ứng dụng (không đổi sau khi đã phát hành, đổi là thành ứng dụng khác)
+//   versionName / versionCode   phiên bản; versionCode phải TĂNG mỗi lần phát hành bản mới
+// ---------------------------------------------------------------------------------------------
+def cfgFile = rootProject.file('../config/app.json')
+if (!cfgFile.exists()) {
+    throw new GradleException("Không thấy ${cfgFile}. Tệp này chứa địa chỉ website và tên ứng dụng (xem mobile/README.md).")
+}
+def cfg
+try {
+    cfg = new JsonSlurper().parse(cfgFile, 'UTF-8')
+} catch (Exception e) {
+    throw new GradleException("mobile/config/app.json sai cú pháp JSON (thiếu dấu phẩy, dấu ngoặc kép?): ${e.message}")
+}
+String webUrl = (cfg.webUrl ?: '').toString().trim()
+String appName = (cfg.appName ?: '').toString().trim()
+String appId = (cfg.appId ?: '').toString().trim()
+String vName = (cfg.versionName ?: '').toString().trim()
+String vCodeText = cfg.versionCode == null ? '' : cfg.versionCode.toString().trim()
+
+if (!(appId ==~ /[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+/)) {
+    throw new GradleException("appId \"${appId}\" không hợp lệ: chỉ dùng chữ thường không dấu, chữ số và dấu chấm, ít nhất 2 phần, ví dụ com.tencuaban.carplay")
+}
+if (appName.isEmpty() || appName.length() > 30 || appName.contains('$') || (appName =~ /[&<>"'\\\/]/).find() || appName.startsWith('@') || appName.startsWith('?')) {
+    throw new GradleException("appName \"${appName}\" không hợp lệ: 1-30 ký tự, không dùng các ký tự \$ & < > \" ' \\ / và không bắt đầu bằng @ hoặc ?")
+}
+if (!(vName ==~ /[0-9]+(\.[0-9]+){0,2}/)) {
+    throw new GradleException("versionName \"${vName}\" không hợp lệ: dạng số như 1.0.0 (tối đa 3 số)")
+}
+if (!(vCodeText ==~ /[0-9]{1,9}/) || vCodeText.toInteger() < 1) {
+    throw new GradleException("versionCode \"${vCodeText}\" không hợp lệ: số nguyên từ 1 trở lên, tăng mỗi lần phát hành")
+}
+if (!(webUrl ==~ /(?i)https?:\/\/[^\s\/"\\]+.*/) || webUrl.toLowerCase().contains('.example')) {
+    logger.warn("CHÚ Ý: mobile/config/app.json chưa có địa chỉ website thật (webUrl = \"${webUrl}\"). " +
+        "Ứng dụng vẫn build được nhưng khi mở sẽ báo \"Chưa cài địa chỉ website\".")
+}
+String webUrlJava = webUrl.replace('\\', '\\\\').replace('"', '\\"')
+
+android {
+    namespace = 'com.phcarplay.app'
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = appId
+        minSdk = 24              // Android 7.0 trở lên
+        targetSdk = 35
+        versionCode = vCodeText.toInteger()
+        versionName = vName
+        buildConfigField 'String', 'WEB_URL', "\"${webUrlJava}\""
+        resValue 'string', 'app_name', appName
+        // http:// (thử trong mạng nội bộ) cần cho phép kết nối không mã hóa; https:// thì không
+        manifestPlaceholders = [usesCleartextTraffic: webUrl.toLowerCase().startsWith('http://') ? 'true' : 'false']
+    }
+
+    signingConfigs {
+        // Khóa ký THỬ đi kèm dự án (mật khẩu công khai "android"), để bản debug build ở máy nào/GitHub nào
+        // cũng cài đè lên nhau được. Phát hành chính thức thì ký bằng khóa riêng: xem mobile/README.md.
+        debug {
+            storeFile = file('debug.keystore')
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.debug
+        }
+        release {
+            minifyEnabled = false
+        }
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'       // vùng tai thỏ, ẩn thanh trạng thái
+    implementation 'androidx.webkit:webkit:1.12.1'   // kênh tin nhắn an toàn website <-> ứng dụng
+}

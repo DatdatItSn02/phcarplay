@@ -1,0 +1,13 @@
+# Apache: mọi yêu cầu không phải file có thật đều chạy qua index.php
+Options -Indexes
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]
+
+# Giai đoạn 13: file JS/CSS luôn hỏi lại máy chủ trước khi dùng (không đổi thì máy chủ trả 304, rất nhẹ),
+# để sau khi cập nhật website, trình duyệt và ứng dụng Android/iOS không chạy lẫn file cũ với file mới.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|mjs|css)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

@@ -1,0 +1,49 @@
+# Build thử ứng dụng Android và iOS trên máy chủ của GitHub (không cần cài Android Studio hay có máy Mac).
+# Chạy khi đẩy thay đổi trong thư mục mobile/ lên GitHub, hoặc bấm tay: tab Actions > "Build ứng dụng điện thoại" > Run workflow.
+# Kết quả:
+#  - Android: tệp APK bản thử (debug) trong mục Artifacts của lần chạy -> tải về, cài lên điện thoại/màn hình xe.
+#  - iOS: chỉ kiểm tra biên dịch được (trình giả lập, không ký). Cài lên iPhone thật vẫn cần máy Mac + Xcode (xem mobile/README.md).
+name: Build ứng dụng điện thoại
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-build.yml'
+
+jobs:
+  android:
+    name: Android (APK debug)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-debug
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS (kiểm tra biên dịch)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cài XcodeGen
+        run: brew install xcodegen
+      - name: Sinh dự án Xcode
+        working-directory: mobile/ios
+        run: ./generate.sh
+      - name: Biên dịch cho trình giả lập (không ký)
+        working-directory: mobile/ios
+        run: xcodebuild -project PHCarPlay.xcodeproj -target PHCarPlay -configuration Debug -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO build

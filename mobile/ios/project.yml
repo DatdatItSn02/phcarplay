@@ -1,0 +1,38 @@
+# Dự án Xcode của vỏ ứng dụng iOS, sinh bằng XcodeGen (https://github.com/yonaskolb/XcodeGen).
+# Không sửa PHCarPlay.xcodeproj bằng tay: chạy ./generate.sh (đọc ../config/app.json rồi sinh lại dự án).
+name: PHCarPlay
+options:
+  bundleIdPrefix: com.phcarplay
+  deploymentTarget:
+    iOS: "15.0"
+  developmentLanguage: vi
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+targets:
+  PHCarPlay:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
+    sources:
+      - path: PHCarPlay
+      # Địa chỉ website đọc lúc chạy từ tệp này (chép nguyên vào ứng dụng)
+      - path: ../config/app.json
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: PHCarPlay
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
+        MARKETING_VERSION: $(APP_VERSION)
+        CURRENT_PROJECT_VERSION: $(APP_BUILD)
+        INFOPLIST_FILE: Support/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_STYLE: Automatic
+    scheme: {}

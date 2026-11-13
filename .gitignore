@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+storage/logs/*
+storage/mail/*
+storage/cache/*
+storage/sessions/*
+!storage/*/.gitkeep
+public/assets/vendor/*
+!public/assets/vendor/README.txt
+# Ảnh chụp và video do kịch bản kiểm thử sinh ra (chạy lại là có)
+e2e-harness/e2e-harness/shot-*.png
+e2e-harness/e2e-harness/clip.webm
+*.sqlite
