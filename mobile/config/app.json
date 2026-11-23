@@ -1,6 +1,6 @@
 {
   "_huong_dan": "Sửa 3 mục webUrl, appName, appId cho đúng rồi build lại ứng dụng (xem mobile/README.md). Mỗi lần phát hành bản mới: tăng versionCode (số nguyên) và versionName.",
-  "webUrl": "https://THAY-DIA-CHI-WEBSITE.example",
+  "webUrl": "https://datdatcarplay.alwaysdata.net/",
   "appName": "PH Car Play",
   "appId": "com.phcarplay.app",
   "versionName": "1.2.0",
