@@ -12,3 +12,5 @@ public/assets/vendor/*
 e2e-harness/e2e-harness/shot-*.png
 e2e-harness/e2e-harness/clip.webm
 *.sqlite
+# Giai đoạn 17: bản mã đang chạy, do deploy/server.sh tạo trên máy chủ khi tự cập nhật
+app/deploy_revision.php

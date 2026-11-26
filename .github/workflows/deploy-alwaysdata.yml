@@ -1,0 +1,72 @@
+# Tự cập nhật website lên alwaysdata (giai đoạn 17).
+# Chạy khi mã website mới vào nhánh main, hoặc bấm tay: tab Actions > "Cập nhật website lên alwaysdata" > Run workflow
+# (chọn check = chỉ kiểm tra, deploy = cập nhật thật).
+# Trình tự: kiểm thử PHP + JavaScript -> vào alwaysdata bằng khóa ALWAYSDATA_SSH_KEY -> sao lưu mã, sao lưu database
+# (khi có migration mới), chạy migration, chép mã mới -> kiểm tra website; website lỗi thì tự trả mã về bản trước.
+# Không bao giờ gửi hay sửa .env, storage/ của máy chủ. Chi tiết: docs/DEPLOY.md, mục "Tự động cập nhật lên alwaysdata".
+name: Cập nhật website lên alwaysdata
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'bin/**'
+      - 'config/**'
+      - 'database/**'
+      - 'public/**'
+      - 'routes/**'
+      - 'storage/**'
+      - '.htaccess'
+      - 'deploy/**'
+      - '.github/workflows/deploy-alwaysdata.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check = chỉ kiểm tra, không đổi gì; deploy = cập nhật thật'
+        type: choice
+        options: [check, deploy]
+        default: check
+
+# Không cho hai lần cập nhật chạy chồng lên nhau.
+concurrency:
+  group: deploy-alwaysdata
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Kiểm thử trước khi cập nhật
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_sqlite, pdo_mysql, mbstring, openssl, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Kiểm thử PHP
+        run: php tests/run.php
+      - name: Kiểm thử JavaScript
+        run: node --test tests/js/*.test.mjs
+
+  deploy:
+    name: Cập nhật lên alwaysdata
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cập nhật website
+        env:
+          SSH_KEY: ${{ secrets.ALWAYSDATA_SSH_KEY }}
+          SSH_HOST: ${{ vars.ALWAYSDATA_SSH_HOST || 'ssh-datdatcarplay.alwaysdata.net' }}
+          SSH_USER: ${{ vars.ALWAYSDATA_SSH_USER || 'datdatcarplay' }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://datdatcarplay.alwaysdata.net' }}
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'deploy' }}
+        run: bash deploy/ci-deploy.sh

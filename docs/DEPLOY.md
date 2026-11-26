@@ -118,6 +118,8 @@ Riêng lần cập nhật lên bản giai đoạn 15 (đợt 1 - nghe nhạc tro
 
 Riêng lần cập nhật lên bản giai đoạn 14: **phải chạy `php bin/migrate.php`** (migration `010_user_phone_otp.sql` thêm cột `phone` vào `users` và bảng `otp_codes`; không đụng dữ liệu cũ). Có thể thêm `OTP_TTL_MINUTES=10` và `SMS_DRIVER=none` vào `.env` (không thêm cũng chạy với giá trị đó). Đăng ký mới bắt buộc số điện thoại; tài khoản cũ vẫn đăng nhập bằng email và tự thêm số trong Cài đặt > "Số điện thoại đăng nhập". Quên/đổi mật khẩu gửi mã 6 số qua email, nên website thật cần `MAIL_DRIVER=smtp` (hoặc `mail`). Không phải build lại ứng dụng Android/iOS.
 
+Riêng lần cập nhật lên bản giai đoạn 17: website tự cập nhật từ GitHub (mục 6b); không phải chép file hay chạy SQL bằng tay nữa.
+
 Riêng lần cập nhật lên bản giai đoạn 16: không có migration. Chép đè các file; mục "Đổi mật khẩu" trong Cài đặt của người dùng được ẩn (đổi bằng "Quên mật khẩu?"). Kiểm tra gửi email ở trang quản trị > Tổng quan > **Gửi email**. Không phải build lại ứng dụng Android/iOS.
 
 Riêng lần cập nhật lên bản giai đoạn 13: không có migration mới, không đổi `.env`. Website nhận ra khi được mở trong ứng dụng Android/iOS (thư mục `mobile/`, hướng dẫn build ở `mobile/README.md`). Nhớ tải lên cả `public/.htaccess` mới (thêm `Cache-Control: no-cache` cho JS/CSS). **Từ giai đoạn này:** thay đổi chỉ ở website thì ứng dụng nhận ngay khi mở lại, không phải build lại; thay đổi trong `mobile/` thì phải build lại ứng dụng (tăng `versionCode` trong `mobile/config/app.json`).
@@ -131,6 +133,40 @@ Riêng lần cập nhật lên bản giai đoạn 10: **phải chạy `php bin/m
 Riêng lần cập nhật lên bản giai đoạn 9: không có migration mới; trong `.env` sửa `VIDEO_SOURCES=piped,invidious,youtube` và thêm các dòng `YOUTUBE_*` theo `.env.example` (không thêm cũng chạy với giá trị mặc định).
 
 Riêng lần cập nhật lên bản giai đoạn 8: **phải chạy `php bin/migrate.php`** (migration `007_soft_delete.sql` thêm các cột đánh dấu xóa; không đụng dữ liệu cũ). Trong `.env` thêm/sửa `VIDEO_SOURCES`, `PIPED_API_URLS`, `INVIDIOUS_API_URLS` theo `.env.example`.
+
+## 6b. Tự động cập nhật lên alwaysdata (giai đoạn 17)
+Từ giai đoạn 17, mã trong nhánh `main` trên GitHub tự lên website, không phải chép file hay chạy SQL bằng tay.
+Tệp liên quan: `.github/workflows/deploy-alwaysdata.yml` (GitHub), `deploy/ci-deploy.sh` (chạy trên máy của GitHub),
+`deploy/server.sh` (chạy trên alwaysdata), `bin/backup-db.php` (sao lưu database), `bin/migrate.php` (cập nhật database).
+
+**Mỗi lần mã mới vào `main` (chỉ khi có đổi trong app, bin, config, database, public, routes, storage, deploy):**
+1. GitHub chạy kiểm thử PHP và JavaScript. Hỏng thì dừng, không đụng website.
+2. Đăng nhập alwaysdata bằng khóa `ALWAYSDATA_SSH_KEY` (thử đúng **một** lần: alwaysdata chặn địa chỉ IP sau khoảng mười lần đăng nhập hỏng).
+3. Chép gói mã (chỉ file có trong git: không bao giờ có `.env`) vào `~/phcarplay-deploy/releases/<bản>/` (giữ 3 bản gần nhất).
+4. Tìm thư mục website: thư mục có `app/bootstrap.php`, `public/index.php`, `.env` và `APP_URL` trỏ đúng địa chỉ website (ghim bằng `deploy/site.conf` nếu có nhiều thư mục).
+5. Sao lưu mã đang chạy vào `~/phcarplay-backups/code-<giờ>.tgz` (giữ 5 bản).
+6. Nếu có migration mới: sao lưu database vào `~/phcarplay-backups/db-<giờ>.sql.gz` (giữ 10 bản), rồi chạy migration. Lỗi thì **dừng trước khi chép mã**: website vẫn chạy mã cũ.
+7. Chép mã mới vào các thư mục `app bin config database public routes` và file `.htaccess`. Không xóa file nào; không đụng `.env`, `storage/`, `public/assets/vendor/`, các file khác ở thư mục gốc.
+8. Kiểm tra `/api/health` (phải báo đúng bản mã mới ba lần liên tiếp), trang chủ và `/admin`. Website lỗi thì tự trả mã về bản sao lưu ở bước 5 (database giữ nguyên vì migration chỉ thêm bảng/cột).
+
+**Cài đặt một lần** (cần mật khẩu nên chủ website tự làm):
+1. alwaysdata: *Remote access > SSH* → sửa người dùng SSH → cho đăng nhập bằng mật khẩu.
+2. Mở `https://ssh-<tài khoản>.alwaysdata.net`, đăng nhập, dán lệnh tạo khóa (in khóa riêng ra màn hình rồi xóa khỏi máy chủ, chỉ để lại khóa công khai trong `~/.ssh/authorized_keys` với ghi chú `phcarplay-github-deploy`; chạy lại thì khóa cũ hết tác dụng):
+   `umask 077; mkdir -p ~/.ssh; chmod 700 ~/.ssh; d=$(mktemp -d); ssh-keygen -q -t ed25519 -N "" -C phcarplay-github-deploy -f "$d/k" && touch ~/.ssh/authorized_keys && { grep -v phcarplay-github-deploy ~/.ssh/authorized_keys; cat "$d/k.pub"; } > "$d/a" && cat "$d/a" > ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo "----- CHEP TU DONG BEGIN DEN DONG END -----" && cat "$d/k"; rm -rf "$d"`
+3. GitHub: *Settings > Secrets and variables > Actions > New repository secret*, tên `ALWAYSDATA_SSH_KEY`, dán khóa (từ dòng `-----BEGIN OPENSSH PRIVATE KEY-----` đến hết dòng `-----END ...-----`).
+4. (Nên làm) Tắt lại đăng nhập SSH bằng mật khẩu; khóa vẫn dùng được.
+5. Lần chạy đầu chỉ kiểm tra và in khóa nhận dạng máy chủ: ghim vào `deploy/known_hosts` (để không bao giờ đăng nhập nhầm máy chủ giả mạo). Từ lần sau mới cập nhật thật.
+
+Mặc định: máy chủ SSH `ssh-datdatcarplay.alwaysdata.net`, người dùng `datdatcarplay`, website `https://datdatcarplay.alwaysdata.net`. Khác thì đặt biến (không bí mật) trong *Settings > Secrets and variables > Actions > Variables*: `ALWAYSDATA_SSH_HOST`, `ALWAYSDATA_SSH_USER`, `SITE_URL`.
+
+**Chạy tay:** tab *Actions* → "Cập nhật website lên alwaysdata" → *Run workflow* → `check` (chỉ xem sẽ đổi gì) hoặc `deploy`.
+
+**Khôi phục bằng tay** (qua SSH):
+- Mã: `tar xzf ~/phcarplay-backups/code-<giờ>.tgz -C <thư mục website>`.
+- Database: file `db-*.sql.gz` chỉ có `CREATE TABLE` và `INSERT` (không xóa hay ghi đè gì), nên tạo một database **mới, trống** trên alwaysdata, nhập file vào (`zcat db-<giờ>.sql.gz | mysql -h mysql-<tài khoản>.alwaysdata.net -u <người dùng> -p <database mới>`), rồi sửa `DB_NAME` trong `.env` trỏ sang database đó.
+- Gỡ quyền của GitHub: xóa dòng có `phcarplay-github-deploy` trong `~/.ssh/authorized_keys`.
+
+`bin/migrate.php` từ giai đoạn 17 chạy lại được khi lần trước dừng giữa chừng hoặc database đã được sửa tay: câu lệnh báo "đã có rồi" (bảng/cột/chỉ mục đã tồn tại) được bỏ qua và in ra. `php bin/migrate.php --pending` liệt kê migration còn thiếu mà không đổi gì.
 
 ## 7. Chạy sau Cloudflare hoặc proxy
 - Cloudflare: SSL/TLS chọn **Full (strict)**; trong `.env` đặt `CLIENT_IP_HEADER=CF-Connecting-IP` để nhật ký và bộ giới hạn tần suất thấy IP thật của người dùng (nếu không, mọi người đều mang IP của Cloudflare).
