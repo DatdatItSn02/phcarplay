@@ -72,8 +72,10 @@ export function listenOnce({ Recognition, lang = 'vi-VN', onPartial = () => {}, 
  * Hộp "Đang nghe..." với micro lớn. Nói xong thì đóng hộp và gọi onResult(text).
  * listen(cb) -> { stop }: cách nghe khác (nhận giọng nói của ứng dụng điện thoại); không có thì dùng Web Speech (Recognition).
  * Người dùng tự đóng màn hình nhận giọng nói của máy (lỗi 'aborted') thì đóng luôn hộp này.
+ * hold ({ begin(), end() }, giai đoạn 17 - voicePause.js): tạm dừng nhạc lúc nghe; onResult trả về Promise (tìm kiếm) thì
+ * phát lại nhạc khi tìm xong; nói không được hoặc đóng hộp thì phát lại ngay.
  */
-export function openVoiceDialog({ Recognition = null, listen = null, onResult }) {
+export function openVoiceDialog({ Recognition = null, listen = null, onResult, hold = null }) {
   const begin = typeof listen === 'function' ? listen : (cb) => listenOnce(Object.assign({ Recognition }, cb));
   let session = null;
   const text = h('p', { class: 'voice-text', 'aria-live': 'polite' });
@@ -81,16 +83,29 @@ export function openVoiceDialog({ Recognition = null, listen = null, onResult })
   const mic = h('div', { class: 'voice-mic', 'aria-hidden': 'true' }, icon('mic', 44));
   const retry = h('button', { type: 'button', class: 'btn btn-primary', hidden: true, onclick: () => start() }, icon('mic'), 'Thử lại');
   let dlg = null;
+  let gotResult = false;
+  const holdBegin = () => { if (hold) { try { hold.begin(); } catch (e) { /* không chặn việc nghe */ } } };
+  const holdEnd = () => { if (hold) { try { hold.end(); } catch (e) { /* bỏ qua */ } } };
 
   function start() {
+    holdBegin();
     retry.hidden = true;
     mic.style.animationPlayState = 'running';
     text.textContent = 'Đang nghe...';
     hint.textContent = 'Hãy nói tên bài hát, ca sĩ hoặc video bạn muốn tìm.';
     session = begin({
       onPartial: (t) => { text.textContent = t; },
-      onResult: (t) => { text.textContent = t; if (dlg) dlg.close(); onResult(t); },
+      onResult: (t) => {
+        text.textContent = t;
+        gotResult = true;
+        if (dlg) dlg.close();
+        let done;
+        try { done = onResult(t); } catch (e) { done = null; }
+        // tìm xong (thành công hay lỗi) thì phát nhạc tiếp
+        Promise.resolve(done).then(holdEnd, holdEnd);
+      },
       onError: (code) => {
+        holdEnd();
         if (code === 'aborted' && listen) { if (dlg) dlg.close(); return; }
         mic.style.animationPlayState = 'paused';
         text.textContent = 'Chưa tìm được';
@@ -103,7 +118,7 @@ export function openVoiceDialog({ Recognition = null, listen = null, onResult })
   dlg = openDialog({
     title: 'Tìm bằng giọng nói',
     focus: 'dialog',
-    onClose: () => { if (session) session.stop(); },
+    onClose: () => { if (session) session.stop(); if (!gotResult) holdEnd(); },
     content: h('div', { class: 'voice' }, mic, text, hint, retry),
   });
   clear(text);

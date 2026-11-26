@@ -53,8 +53,9 @@ export const browserPanel = {
       active = target;
       VIEWS.forEach((v) => { views[v.id].hidden = v.id !== target; });
       const hd = handles[target];
-      if (hd && hd.activate) hd.activate(opts || {});
+      const result = hd && hd.activate ? hd.activate(opts || {}) : undefined;
       listeners.slice().forEach((fn) => fn(target));
+      return result;   // mục Tìm kiếm: Promise xong khi tìm xong (tìm bằng giọng nói đợi nó để phát nhạc tiếp)
     }
 
     const viewCtx = Object.assign({}, ctx, { recent, openSearch: (opts) => show('search', opts) });

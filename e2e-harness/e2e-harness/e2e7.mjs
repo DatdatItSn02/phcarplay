@@ -186,7 +186,7 @@ await page.mouse.click(stage.x + stage.width / 2, stage.y + stage.height / 2);
 check('5 chạm một lần giữa video: tạm dừng', await until(page, () => document.querySelector('video').paused, null, 3000));
 await page.mouse.click(stage.x + stage.width / 2, stage.y + stage.height / 2);
 check('5 chạm lần nữa: phát tiếp', await until(page, () => !document.querySelector('video').paused, null, 3000));
-const playBox = await page.locator('.ctl-main').first().boundingBox();
+const playBox = await page.locator('.player .ctl-main').first().boundingBox();
 check('5 nút phát/tạm dừng to (>= 56px)', playBox.width >= 56 && playBox.height >= 56, `${Math.round(playBox.width)}px`);
 
 // ===== 6. Thanh phát nhỏ khi chỉ hiện danh sách =====

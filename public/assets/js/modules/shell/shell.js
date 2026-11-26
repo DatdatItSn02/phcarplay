@@ -16,6 +16,7 @@ import { createCastApi } from '../cast/castApi.js';
 import { createCastScreen } from '../cast/castScreen.js';
 import { createCastSender } from '../cast/castSender.js';
 import { openCastSenderDialog } from '../cast/castSenderDialog.js';
+import { createVoicePause } from '../browser/voicePause.js';
 
 registerPanel(playerPanel);
 registerPanel(browserPanel);
@@ -45,17 +46,15 @@ async function autostart(media, user, defaultVideo) {
   if (controller.snapshot().autoMix) controller.next();
 }
 
-const quiet = (p) => { if (p && typeof p.catch === 'function') p.catch(() => {}); };
-
 /**
  * Giai đoạn 13: nối khung ứng dụng với ứng dụng điện thoại (core/nativeApp.js). Không ở trong ứng dụng thì không làm gì.
  * - Quay lại (Android): thoát "Chỉ video"/"Chỉ danh sách" -> về Trang chủ -> để ứng dụng xử lý (hộp thoại đã được đóng trước đó).
  * - Phím nhạc (vô lăng, tai nghe), ra nền thì dừng / hiện lại thì phát tiếp, báo bài đang phát cho ứng dụng.
- * - Tìm bằng giọng nói của máy: dừng nhạc trong lúc nghe, nghe xong phát tiếp.
- * Trả về { voice, bindBack({ split, browse, select }), destroy }.
+ * - Tìm bằng giọng nói của máy (dừng nhạc lúc nghe, tìm xong phát tiếp: voicePause.js trong mountShell).
+ * Trả về { voice, background, isHidden, bindBack({ split, browse, select, cast }), destroy }.
  */
 function connectApp(nativeApp, media) {
-  if (!nativeApp || !nativeApp.inApp) return { voice: null, background: null, bindBack() {}, destroy() {} };
+  if (!nativeApp || !nativeApp.inApp) return { voice: null, background: null, isHidden: () => false, bindBack() {}, destroy() {} };
   const { controller, surface } = media;
   const offs = [];
   offs.push(nativeApp.onMediaKey((key) => handleMediaKey(key, { controller, surface })));
@@ -95,25 +94,15 @@ function connectApp(nativeApp, media) {
   surface.addEventListener('seeked', onSeek);
   offs.push(() => { surface.removeEventListener('durationchange', onSeek); surface.removeEventListener('seeked', onSeek); });
 
-  const voice = nativeApp.canVoice() ? {
-    listen(cb) {
-      const c = cb || {};
-      const wasPlaying = Boolean(controller.snapshot().current) && !surface.paused;
-      if (wasPlaying) quiet(controller.toggle());
-      return nativeApp.listen(Object.assign({}, c, {
-        onEnd: () => {
-          if (wasPlaying && surface.paused && !life.isHidden()) quiet(controller.toggle());
-          if (c.onEnd) c.onEnd();
-        },
-      }));
-    },
-  } : null;
+  // Giai đoạn 17: dừng nhạc lúc nghe / phát lại sau khi tìm xong do voicePause.js lo (chung với micro của trình duyệt).
+  const voice = nativeApp.canVoice() ? { listen: (cb) => nativeApp.listen(cb || {}) } : null;
   return {
     voice,
     background,
+    isHidden: () => life.isHidden(),
     bindBack({ split, browse, select, cast }) {
       offs.push(nativeApp.onBack(() => {
-        if (cast && cast.showMusic()) return true;   // đang "Chỉ bản đồ": hiện lại phần nhạc
+        if (cast && cast.leaveFull()) return true;   // đang "Toàn màn hình" (chiếu điện thoại): trở lại chia đôi
         if (split.controller.snapshot().focus) { split.controller.setFocus(null); return true; }
         if (browse.current() !== 'home') { select('home'); return true; }
         return false;
@@ -198,7 +187,9 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
     openKeySettings: () => (session && session.user ? openSettingsDlg({ focusKey: true }) : onLogin()),
   };
   const app = connectApp(nativeApp, media);
-  const ctx = { api, session, media, appearance, homeChips, layout, keyHint, voice: app.voice };
+  // Giai đoạn 17: tìm bằng giọng nói thì tạm dừng nhạc, tìm xong phát tiếp.
+  const voicePause = createVoicePause({ controller: media.controller, onState: media.onState, canResume: () => !app.isHidden() });
+  const ctx = { api, session, media, appearance, homeChips, layout, keyHint, voice: app.voice, voicePause };
 
   const left = buildPanel(SLOTS.left, ctx);
   const right = buildPanel(SLOTS.right, ctx);
@@ -223,6 +214,7 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
   // Màn hình này NHẬN hình (máy nào cũng được): nút "Chiếu ĐT" -> hộp mã 6 số -> khi điện thoại nối xong thì CHIA HẲN màn hình
   // làm 2 bên: bản đồ chiếm trọn một bên (phía tài xế), cả ứng dụng nghe nhạc dồn sang bên kia và thu gọn thành
   // danh sách + thanh phát nhỏ (bấm thanh nhỏ để hiện lại video).
+  // Giai đoạn 17: "Toàn màn hình" -> html[data-cast-full] ẩn cả .app, nhạc thành cửa sổ nổi trong khung chiếu (castFloat.js).
   const castApi = createCastApi(api);
   const doc = document.documentElement;
   let castOn = false;
@@ -234,11 +226,11 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
       if (l.active) {
         doc.setAttribute('data-cast', l.stacked ? 'stacked' : 'side');
         doc.setAttribute('data-cast-side', l.side);
-        if (l.only) doc.setAttribute('data-cast-only', ''); else doc.removeAttribute('data-cast-only');
+        if (l.full) doc.setAttribute('data-cast-full', ''); else doc.removeAttribute('data-cast-full');
       } else {
         doc.removeAttribute('data-cast');
         doc.removeAttribute('data-cast-side');
-        doc.removeAttribute('data-cast-only');
+        doc.removeAttribute('data-cast-full');
       }
       if (l.active === castOn) return;
       castOn = l.active;
@@ -304,10 +296,11 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
 
   autostart(media, user, youtubeEmbed && youtubeEmbed.defaultVideo ? youtubeEmbed.defaultVideo : null);
   return () => {
+    voicePause.destroy();
     app.destroy();
     cast.destroy();
     if (castSender) castSender.destroy();
-    ['data-cast', 'data-cast-side', 'data-cast-only'].forEach((a) => doc.removeAttribute(a));
+    ['data-cast', 'data-cast-side', 'data-cast-full'].forEach((a) => doc.removeAttribute(a));
     typing.destroy();
     offSplit();
     rail.destroy();

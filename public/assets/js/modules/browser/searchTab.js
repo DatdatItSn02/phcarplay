@@ -11,7 +11,7 @@ import { createKeyHintPolicy, keyHintBanner } from './keyHint.js';
  * kết quả có ảnh/tên/kênh/lượt xem, nút ⋮ cho các thao tác, cuộn tới cuối thì tự tải thêm.
  * activate({ focus, query }): được gọi mỗi lần mở mục này.
  */
-export function mountSearchTab(container, { media, recent: recentStore, keyHint = null, voice = null }) {
+export function mountSearchTab(container, { media, recent: recentStore, keyHint = null, voice = null, voicePause = null }) {
   const { youtube, controller } = media;
   // Nhắc thêm khóa YouTube API riêng (keyHint: { isUser, openKeySettings, policy }) - null = không nhắc.
   let hintStorage = null;
@@ -36,7 +36,7 @@ export function mountSearchTab(container, { media, recent: recentStore, keyHint 
   const form = h('form', { class: 'searchbar', role: 'search', onsubmit: (e) => { e.preventDefault(); search(input.value); } },
     h('div', { class: 'search-field' }, input, clearBtn,
       h('button', { class: 'search-go', type: 'submit', 'aria-label': 'Tìm', title: 'Tìm' }, icon('search', 26))),
-    micButton((text) => search(text), voice));
+    micButton((text) => search(text), voice, voicePause));
 
   // ba vùng: tìm gần đây / gợi ý / kết quả (mỗi lúc chỉ hiện một)
   const recentBox = h('div', {});
@@ -102,9 +102,10 @@ export function mountSearchTab(container, { media, recent: recentStore, keyHint 
     }
   }
 
+  /** Trả về Promise xong khi có kết quả (hoặc báo lỗi): tìm bằng giọng nói đợi nó rồi mới phát nhạc tiếp. */
   function search(q) {
     const text = String(q || '').trim();
-    if (!text) { input.focus(); return; }
+    if (!text) { input.focus(); return Promise.resolve(); }
     clearTimeout(suggestTimer);
     suggestSeq++;
     query = text;
@@ -113,8 +114,9 @@ export function mountSearchTab(container, { media, recent: recentStore, keyHint 
     recent.add(text);
     showPanel('results');
     loading = false;
-    run(true);
+    const done = run(true);
     input.blur();   // ẩn bàn phím ảo để thấy kết quả
+    return done;
   }
 
   function onType() {
@@ -153,7 +155,7 @@ export function mountSearchTab(container, { media, recent: recentStore, keyHint 
   return {
     activate(opts) {
       const o = opts || {};
-      if (o.query) { search(o.query); return; }
+      if (o.query) return search(o.query);
       if (!query) drawRecent();
       if (o.focus) setTimeout(() => input.focus(), 0);
     },

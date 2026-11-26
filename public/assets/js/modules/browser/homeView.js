@@ -137,7 +137,7 @@ export function mountHomeView(el, ctx) {
 
   el.append(
     h('header', { class: 'view-head' },
-      fakeSearchBar({ onOpen: () => ctx.openSearch({ focus: true }), onVoice: (text) => ctx.openSearch({ query: text }), voice: ctx.voice || null }),
+      fakeSearchBar({ onOpen: () => ctx.openSearch({ focus: true }), onVoice: (text) => ctx.openSearch({ query: text }), voice: ctx.voice || null, hold: ctx.voicePause || null }),
       chipRow),
     h('div', { class: 'view-body' }, list, status, sentinel));
 

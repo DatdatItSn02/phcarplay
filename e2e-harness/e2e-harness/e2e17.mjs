@@ -13,7 +13,7 @@ const { chromium } = require(execSync('npm root -g').toString().trim() + '/playw
 //  - Trang "điện thoại": User-Agent ứng dụng Android 1.2.0 + kênh PHCarPlayNative GIẢ. Phần chụp màn hình của Android được
 //    GIẢ bằng cách trả ảnh JPEG cho địa chỉ /__cast/frame (ứng dụng thật trả ảnh này từ bộ nhớ) và gọi window.__phApp.cast(...).
 // Kiểm tra: ghép nối bằng mã (sai mã, đúng mã), hình tới đúng kích thước và có màu, bố cục chia đôi phía tài xế, Lấp đầy / Vừa khung,
-// Đổi bên, Chỉ bản đồ, điện thoại xoay ngang, mất kết nối tự nối lại, dừng từ màn hình xe, dừng từ điện thoại, từ chối quyền,
+// Đổi bên, Toàn màn hình (giai đoạn 17, thử kỹ ở e2e19), điện thoại xoay ngang, mất kết nối tự nối lại, dừng từ màn hình xe, dừng từ điện thoại, từ chối quyền,
 // máy không hỗ trợ thì không có nút, màn hình 800x480.
 // KHÔNG thử được: phần Java chụp màn hình thật (MediaProjection), điện thoại và màn hình xe thật, dây USB / Wi-Fi thật.
 const PUBLIC_DIR = process.env.PUBLIC_DIR;
@@ -281,7 +281,7 @@ const fitsHalf = await car.evaluate(() => {
   const t = document.querySelector('.minibar-title');
   return { play: inView('.minibar .ctl-main'), bar: inView('.minibar'), search: inView('.search-fake'), titleW: t ? Math.round(t.getBoundingClientRect().width) : 0, labels, scrollX: document.documentElement.scrollWidth <= innerWidth };
 });
-check('C8 nửa màn hình vẫn đủ chỗ: ô tìm kiếm, thanh phát nhỏ (thấy tên bài, nút phát), không tràn ngang; nút trên khung bản đồ có chữ', fitsHalf.play && fitsHalf.bar && fitsHalf.search && fitsHalf.titleW >= 90 && fitsHalf.scrollX && fitsHalf.labels.join('|') === 'Đổi bên|Vừa khung|Chỉ bản đồ|Dừng chiếu', JSON.stringify(fitsHalf));
+check('C8 nửa màn hình vẫn đủ chỗ: ô tìm kiếm, thanh phát nhỏ (thấy tên bài, nút phát), không tràn ngang; nút trên khung bản đồ có chữ', fitsHalf.play && fitsHalf.bar && fitsHalf.search && fitsHalf.titleW >= 90 && fitsHalf.scrollX && fitsHalf.labels.join('|') === 'Đổi bên|Vừa khung|Toàn màn hình|Dừng chiếu', JSON.stringify(fitsHalf));
 await car.locator('.toast').filter({ hasText: 'Kéo hình' }).waitFor({ timeout: 4000 }).catch(() => {});
 check('C9 lần đầu có lời nhắc "Kéo hình để chọn phần bản đồ muốn xem"', /Kéo hình để chọn phần bản đồ muốn xem/.test(await car.locator('.toast').textContent().catch(() => '')));
 await phone.locator('.cast-live-title').waitFor({ timeout: 6000 }).catch(() => {});
@@ -341,17 +341,17 @@ const app2 = await rect(car, '.app');
 check('D5 "Đổi bên": bản đồ sang hẳn nửa phải (sát mép phải), ứng dụng sang trái', Math.abs(swapped.r - 1024) <= 1 && app2.l === 0 && Math.abs(app2.r - swapped.l) <= 1, JSON.stringify({ swapped, app2 }));
 await car.getByRole('button', { name: 'Đổi bên' }).click();
 await sleep(250);
-await car.getByRole('button', { name: 'Chỉ bản đồ' }).click();
+await car.locator('.cast-bar').getByRole('button', { name: 'Toàn màn hình' }).click();
 await sleep(250);
 const onlyPane = await rect(car, '.cast-pane');
-check('D6 "Chỉ bản đồ": bản đồ chiếm cả màn hình, có nút phát/dừng trên thanh', (await rect(car, '.app')) === null && Math.abs(onlyPane.w - 1024) <= 1 && await car.locator('.cast-play').isVisible());
-await car.locator('.cast-play').click();
+check('D6 "Toàn màn hình": bản đồ chiếm cả màn hình, nhạc là cửa sổ nổi có nút phát/dừng', (await rect(car, '.app')) === null && Math.abs(onlyPane.w - 1024) <= 1 && await car.locator('.cast-float .ctl-main').isVisible());
+await car.locator('.cast-float .ctl-main').click();
 const pausedFromBar = await waitPlaying(car, false);
-await car.locator('.cast-play').click();
-check('D7 nút phát/dừng trên thanh bản đồ điều khiển được nhạc', pausedFromBar && await waitPlaying(car, true));
-await car.getByRole('button', { name: 'Hiện nhạc' }).click();
+await car.locator('.cast-float .ctl-main').click();
+check('D7 nút phát/dừng trên cửa sổ nổi điều khiển được nhạc', pausedFromBar && await waitPlaying(car, true));
+await car.locator('.cast-bar').getByRole('button', { name: 'Chia đôi' }).click();
 await sleep(250);
-check('D8 "Hiện nhạc" trở lại chia đôi', (await rect(car, '.app')) !== null && !(await car.locator('.cast-play').isVisible()));
+check('D8 "Chia đôi" trở lại chia đôi, cửa sổ nổi biến mất', (await rect(car, '.app')) !== null && !(await car.locator('.cast-float').isVisible()));
 
 // ---------- F. Mất kết nối -> tự nối lại ----------
 const before = await phone.evaluate(() => window.__pcs.length);

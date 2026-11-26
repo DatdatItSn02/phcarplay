@@ -2,15 +2,19 @@
 //  - Hộp ghép nối: mã 6 số thật to, đồng hồ đếm ngược, 3 bước hướng dẫn (2 cách cho hai máy chung mạng).
 //  - Khung chiếu (el): chiếm HẲN một bên màn hình (sát mép, cao hết màn hình, không bo góc), toàn bộ ứng dụng nghe nhạc
 //    (kể cả thanh mục) dồn sang bên còn lại - giống chia đôi màn hình cho hai ứng dụng. Mặc định bản đồ nằm phía tài xế.
-//    Thanh nút: Đổi bên, Vừa khung/Lấp đầy, Chỉ bản đồ, Dừng chiếu.
+//    Thanh nút: Đổi bên, Vừa khung/Lấp đầy, Toàn màn hình/Chia đôi, Dừng chiếu.
 //    "Lấp đầy" (mặc định): đúng nửa màn hình (kéo vạch chia để đổi), hình phóng kín khung; kéo hình để chọn phần muốn xem.
 //    "Vừa khung": thấy trọn màn hình điện thoại, bề rộng theo đúng tỉ lệ máy (không viền đen).
-// shell.js đặt el cạnh .app (trong .screen) và nghe onLayout({ active, side, only, stacked }).
+//    Giai đoạn 17 - "Toàn màn hình": hình điện thoại chiếm cả màn hình xe (điện thoại xoay ngang thì vừa khít), phần nhạc
+//    thu thành cửa sổ nổi kéo được (castFloat.js: video/ảnh bìa, tên bài, ⏮ ⏯ ⏭, Chia đôi, Thu nhỏ). Bấm "Chia đôi"
+//    (trên thanh nút, trên cửa sổ nổi hoặc nút Quay lại của ứng dụng) để trở lại chia đôi.
+// shell.js đặt el cạnh .app (trong .screen) và nghe onLayout({ active, side, full, stacked }).
 import { h, clear } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
 import { openDialog } from '../../core/dialog.js';
 import { showToast } from '../../core/toast.js';
 import { createCastReceiver } from './castReceiver.js';
+import { createCastFloat } from './castFloat.js';
 import { clampShare, coverOverflow, fitColumnWidth, fitRowHeight, formatCode, panBy } from './castProtocol.js';
 
 const PREF_KEY = 'carweb_cast_view2';
@@ -43,7 +47,7 @@ const mmss = (ms) => {
 
 export function createCastScreen({ castApi, media, onLayout = () => {}, receiverFactory = createCastReceiver }) {
   const prefs = loadPrefs();
-  let only = false;            // "Chỉ bản đồ": ẩn phần nhạc
+  let full = false;            // "Toàn màn hình": hình điện thoại chiếm cả màn hình, nhạc là cửa sổ nổi
   let frameW = 0;
   let frameH = 0;
   let dialog = null;
@@ -59,15 +63,23 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
   const veilText = h('p', {});
   const veil = h('div', { class: 'cast-veil', role: 'status', hidden: true }, h('span', { class: 'cast-spin', 'aria-hidden': 'true' }), veilText);
   const stage = h('div', { class: 'cast-stage' }, canvas, veil);
+  // cửa sổ nhạc nổi: chỉ tạo khi bấm "Toàn màn hình" lần đầu (đa số người dùng không chiếu thì không tốn gì)
+  let float = null;
+  function floatWin() {
+    if (!float) {
+      float = createCastFloat({ media, onSplit: () => { setFull(false); try { fullBtn.focus({ preventScroll: true }); } catch (e) { /* bỏ qua */ } } });
+      stage.append(float.el);
+    }
+    return float;
+  }
 
   const tool = (iconName, label, onclick, cls = '') => h('button', { type: 'button', class: `cast-tool ${cls}`.trim(), 'aria-label': label, title: label, onclick }, icon(iconName, 24), h('span', { class: 'cast-tool-text' }, label));
   const swapBtn = tool('swap', 'Đổi bên', () => { prefs.side = prefs.side === 'start' ? 'end' : 'start'; savePrefs(prefs); apply(); });
   const modeBtn = tool('fitScreen', 'Lấp đầy', () => { prefs.mode = prefs.mode === 'fit' ? 'fill' : 'fit'; savePrefs(prefs); apply(); });
-  const onlyBtn = tool('expand', 'Chỉ bản đồ', () => { only = !only; apply(); });
-  const playBtn = tool('play', 'Phát', () => media.controller.toggle(), 'cast-play');
+  const fullBtn = tool('fullscreen', 'Toàn màn hình', () => setFull(!full), 'cast-full');
   const stopBtn = tool('stop', 'Dừng chiếu', () => stop(true), 'cast-stop');
   const who = h('span', { class: 'cast-who' });
-  const bar = h('div', { class: 'cast-bar', role: 'toolbar', 'aria-label': 'Điều khiển chiếu màn hình' }, who, swapBtn, modeBtn, onlyBtn, playBtn, stopBtn);
+  const bar = h('div', { class: 'cast-bar', role: 'toolbar', 'aria-label': 'Điều khiển chiếu màn hình' }, who, swapBtn, modeBtn, fullBtn, stopBtn);
   const grip = h('div', { class: 'cast-grip', role: 'separator', 'aria-label': 'Kéo để đổi độ rộng khung chiếu', tabindex: '0' });
   const el = h('section', { class: 'cast-pane', 'aria-label': 'Màn hình điện thoại', hidden: true }, stage, bar, grip);
 
@@ -123,25 +135,28 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
   function apply() {
     const live = receiver.isLive();
     el.hidden = !live;
-    if (!live) { only = false; onLayout({ active: false, side: prefs.side, only: false, stacked: false }); return; }
+    if (!live) { full = false; if (float) float.hide(); onLayout({ active: false, side: prefs.side, full: false, stacked: false }); return; }
     const b = box();
     const stacked = b.h > b.w * 1.15;     // màn hình xe đặt dọc: khung chiếu nằm trên, nhạc nằm dưới
     el.dataset.mode = prefs.mode;
     el.dataset.stacked = stacked ? '1' : '0';
     let basis = '';
-    if (!only) {
+    if (!full) {
       const barH = bar.offsetHeight || 48;   // thanh nút nằm dưới hình: trừ ra để hình vừa khít, không viền đen
       if (prefs.mode === 'fit') basis = (stacked ? fitRowHeight(frameW, frameH, b.w, b.h - barH) + barH : fitColumnWidth(frameW, frameH, b.w, b.h - barH)) + 'px';
       else basis = Math.round((stacked ? b.h : b.w) * prefs.share) + 'px';
     }
-    el.style.flex = only ? '1 1 auto' : `0 0 ${basis}`;
+    el.style.flex = full ? '1 1 auto' : `0 0 ${basis}`;
+    el.dataset.full = full ? '1' : '0';
     canvas.style.objectPosition = prefs.mode === 'fill' ? `${Math.round(prefs.panX * 100)}% ${Math.round(prefs.panY * 100)}%` : '';
     setLabel(modeBtn, prefs.mode === 'fit' ? 'fitScreen' : 'collapse', prefs.mode === 'fit' ? 'Lấp đầy' : 'Vừa khung');
-    setLabel(onlyBtn, only ? 'queue' : 'expand', only ? 'Hiện nhạc' : 'Chỉ bản đồ');
-    playBtn.hidden = !only;
-    grip.hidden = only || prefs.mode !== 'fill';
-    onLayout({ active: true, side: prefs.side, only, stacked });
+    setLabel(fullBtn, full ? 'splitScreen' : 'fullscreen', full ? 'Chia đôi' : 'Toàn màn hình');
+    swapBtn.hidden = full;            // cả màn hình là bản đồ: không còn "bên" để đổi
+    grip.hidden = full || prefs.mode !== 'fill';
+    if (!full && float) float.hide();   // trả thẻ video về trình phát trước khi hiện lại phần nhạc
+    onLayout({ active: true, side: prefs.side, full, stacked });
     measure();
+    if (full) floatWin().show();      // sau khi khung chiếu đã chiếm cả màn hình (cỡ cửa sổ nổi tính theo khung)
   }
   // Sau khi trình duyệt xếp xong: khung đủ rộng thì hiện chữ trên nút; mép kéo nằm ở cạnh giáp phần nhạc.
   function measure() {
@@ -154,7 +169,8 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
     stage.dataset.pan = over.x > 0 || over.y > 0 ? '1' : '0';
     if (stage.dataset.pan === '1') panHint();
     const stacked = el.dataset.stacked === '1';
-    if (stacked) el.dataset.edge = (r.top - pr.top) <= (pr.bottom - r.bottom) ? 'bottom' : 'top';
+    if (full) delete el.dataset.edge;   // chiếm cả màn hình: không có cạnh giáp phần nhạc
+    else if (stacked) el.dataset.edge = (r.top - pr.top) <= (pr.bottom - r.bottom) ? 'bottom' : 'top';
     else el.dataset.edge = (r.left - pr.left) <= (pr.right - r.right) ? 'right' : 'left';
   }
   // "Lấp đầy": hình bị thừa bao nhiêu px mỗi chiều (kéo hình trong phạm vi đó)
@@ -227,10 +243,11 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
     apply();
   });
 
-  const offMedia = media.onState((s) => {
-    const playing = s.status === 'playing';
-    setLabel(playBtn, playing ? 'pause' : 'play', playing ? 'Tạm dừng' : 'Phát');
-  });
+  function setFull(on) {
+    if (full === on || (on && !receiver.isLive())) return;
+    full = on;
+    apply();
+  }
 
   // ----- hộp ghép nối -----
   function closeDialog() {
@@ -329,13 +346,14 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
     },
     stop: () => stop(false),
     isLive: () => receiver.isLive(),
-    /** Đang "Chỉ bản đồ" thì hiện lại phần nhạc (nút Quay lại của ứng dụng). Trả về true nếu đã xử lý. */
-    showMusic() { if (!only) return false; only = false; apply(); return true; },
+    /** Đang "Toàn màn hình" thì trở lại chia đôi (nút Quay lại của ứng dụng). Trả về true nếu đã xử lý. */
+    leaveFull() { if (!full) return false; setFull(false); return true; },
+    isFull: () => full,
     relayout: () => { if (receiver.isLive()) apply(); },
     destroy() {
       destroyed = true;
       window.removeEventListener('resize', onResize);
-      if (offMedia) offMedia();
+      if (float) float.destroy();
       closeDialog();
       receiver.stop();
     },

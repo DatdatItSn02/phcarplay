@@ -668,7 +668,7 @@ html[data-typing] .minibar .ctl:not(.ctl-main), html[data-typing] .minibar .btn-
 [data-rail="right"] .screen { flex-direction: row-reverse; }            /* bản đồ luôn ở mép phía tài xế (cùng phía thanh mục) */
 html[data-cast="stacked"] .screen { flex-direction: column; }           /* màn hình xe đặt dọc: bản đồ nửa trên, nhạc nửa dưới */
 html[data-cast-side="end"] .cast-pane { order: 2; }                     /* "Đổi bên" */
-html[data-cast-only] .screen > .app { display: none; }                  /* "Chỉ bản đồ" */
+html[data-cast-full] .screen > .app { display: none; }                  /* "Toàn màn hình" (giai đoạn 17): nhạc là cửa sổ nổi */
 .work-music { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 /* Ứng dụng chỉ còn nửa màn hình: thanh mục gọn lại để dành chỗ cho danh sách */
 html[data-cast="side"] .rail { width: 4.5rem; }
@@ -730,6 +730,54 @@ html[data-cast="side"] .browse[data-w="xs"] .skel-row { flex-direction: row; pad
 .cast-pane[data-edge="bottom"] .cast-grip { bottom: 4rem; }
 .cast-pane[data-edge="top"] .cast-grip { top: 0; }
 .cast-pane[data-edge="bottom"] .cast-grip::before, .cast-pane[data-edge="top"] .cast-grip::before { width: 3.5rem; height: 5px; }
+
+/* ---------- Giai đoạn 17: "Toàn màn hình" - cửa sổ nhạc nổi trên khung chiếu (castFloat.js) ---------- */
+/* Giống cửa sổ nhỏ của YouTube: kéo đi đâu cũng được, thả ra thì dính vào góc gần nhất (data-corner); bề rộng do fit() đặt. */
+.cast-float { position: absolute; z-index: 3; width: 18rem; color: var(--text); touch-action: none; user-select: none; -webkit-user-select: none;
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
+.cast-float[data-corner="tl"] { top: .75rem; left: .75rem; }
+.cast-float[data-corner="tr"] { top: .75rem; right: .75rem; }
+.cast-float[data-corner="bl"] { bottom: .75rem; left: .75rem; }
+.cast-float[data-corner="br"] { bottom: .75rem; right: .75rem; }
+.cast-float[data-dragging] { transition: none; }
+.cast-float[data-min] { width: auto; }
+.cast-float-card { overflow: hidden; border-radius: var(--radius-l); background: var(--surface); box-shadow: 0 10px 32px rgba(0, 0, 0, .55), 0 0 0 1px var(--line-strong); cursor: grab; }
+.cast-float[data-dragging] .cast-float-card, .cast-float[data-dragging] .cast-float-bubble { cursor: grabbing; }
+.cast-float-media { position: relative; aspect-ratio: 16 / 9; background: #000; }
+.cast-float-media > .media-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cast-float-art, .cast-float-noart { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cast-float-art { display: block; object-fit: cover; -webkit-user-drag: none; }
+.cast-float-noart { display: grid; place-items: center; background: var(--surface-2); color: var(--text-2); }
+.cast-float[data-kind="video"] .cast-float-art, .cast-float[data-kind="video"] .cast-float-noart { display: none; }
+/* "Chia đôi" và "Thu nhỏ": nút tròn trên góc hình; không có phần hình thì nằm cạnh tên bài */
+.cast-float-btn { width: 2.75rem; height: 2.75rem; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; flex: none; background: rgba(0, 0, 0, .62); color: #fff; }
+.cast-float-btn:hover { background: rgba(0, 0, 0, .8); }
+.cast-float-media > .cast-float-btn { position: absolute; top: .375rem; z-index: 1; }
+.cast-float-media > .cast-float-split { left: .375rem; }
+.cast-float-media > .cast-float-min { right: .375rem; }
+.cast-float-head > .cast-float-btn { background: var(--chip); color: var(--text); }
+.cast-float-head > .cast-float-btn:hover { background: var(--chip-hover); }
+.cast-float-progress { height: 3px; background: var(--chip-hover); }
+.cast-float-fill { height: 100%; width: 0; background: var(--brand); }
+.cast-float-info { min-width: 0; display: grid; gap: .125rem; }
+.cast-float-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-float-sub { min-height: 1.15em; color: var(--text-2); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* tên bài đè ở mép dưới hình (nền tối mờ dần cho dễ đọc) */
+.cast-float-media > .cast-float-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 1.75rem .75rem .5rem; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .7);
+  background: linear-gradient(rgba(0, 0, 0, 0), rgba(0, 0, 0, .78)); }
+.cast-float-media > .cast-float-info .cast-float-sub { color: rgba(255, 255, 255, .82); }
+/* màn hình thấp (không có phần hình): tên bài + 2 nút trên một hàng */
+.cast-float-head { display: flex; align-items: center; gap: .375rem; padding: .5rem .625rem 0 .75rem; }
+.cast-float-head > .cast-float-info { flex: 1 1 0; }
+.cast-float-ctl { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: .375rem .5rem .625rem; }
+.cast-float .ctl { width: var(--tap); height: var(--tap); }
+.cast-float .ctl-main { width: var(--tap-l); height: var(--tap-l); }
+/* thu nhỏ: bong bóng tròn (ảnh bìa + dấu đang phát / tạm dừng); bấm để mở lại, kéo để dời */
+.cast-float-bubble { position: relative; width: 4.5rem; height: 4.5rem; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; overflow: hidden;
+  background: var(--surface); color: var(--text); box-shadow: 0 8px 24px rgba(0, 0, 0, .55), 0 0 0 3px var(--brand); cursor: grab; }
+.cast-float-bubble img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+.cast-float-badge { position: absolute; left: 50%; bottom: .375rem; width: 1.5rem; height: 1.5rem; margin-left: -.75rem; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .7); color: #fff; }
+@media (prefers-reduced-motion: reduce) { .cast-float { transition: none; } }
 
 .rail-cast[aria-pressed="true"] { color: var(--brand); background: var(--chip); }
 
