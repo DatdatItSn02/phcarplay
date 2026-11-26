@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Giao diện sáng của máy (values-night/themes.xml cho chế độ tối): WebView dựa vào đây để báo cho website
+      biết máy đang sáng hay tối (prefers-color-scheme), dùng cho chế độ "Tự động" trong Cài đặt của website.
+      Nền luôn tối (#0F0F0F) để lúc mở ứng dụng không bị chớp trắng.
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+        <item name="android:colorPrimary">@color/brand</item>
+        <item name="android:colorAccent">@color/brand</item>
+        <item name="android:statusBarColor">@color/app_background</item>
+        <item name="android:navigationBarColor">@color/app_background</item>
+    </style>
+</resources>

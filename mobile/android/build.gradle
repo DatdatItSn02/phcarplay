@@ -1,0 +1,4 @@
+// Phiên bản công cụ build Android (Android Gradle Plugin). Ứng dụng viết bằng Java nên không cần plugin Kotlin.
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}

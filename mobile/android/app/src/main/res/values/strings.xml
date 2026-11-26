@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- app_name lấy từ mobile/config/app.json (app/build.gradle, resValue). -->
+    <string name="offline_title">Không kết nối được</string>
+    <string name="offline_message">Hãy kiểm tra Wi-Fi hoặc 4G rồi bấm Thử lại. Có mạng trở lại thì ứng dụng tự tải lại.</string>
+    <string name="retry">Thử lại</string>
+    <string name="config_title">Chưa cài địa chỉ website</string>
+    <string name="config_message">Mở tệp mobile/config/app.json, điền địa chỉ website thật vào mục webUrl rồi build lại ứng dụng.\n\nĐang là: %1$s</string>
+    <string name="press_back_again">Bấm Quay lại lần nữa để thoát</string>
+    <string name="voice_prompt">Hãy nói tên bài hát hoặc ca sĩ</string>
+    <string name="cannot_open_link">Không mở được liên kết này</string>
+    <string name="playback_channel">Đang phát nhạc</string>
+    <string name="media_prev">Bài trước</string>
+    <string name="media_play">Phát</string>
+    <string name="media_pause">Dừng</string>
+    <string name="media_next">Bài kế</string>
+    <string name="cast_channel">Chiếu màn hình lên xe</string>
+    <string name="cast_title">Đang chiếu màn hình lên xe</string>
+    <string name="cast_text">Màn hình xe đang hiện những gì điện thoại này hiện</string>
+    <string name="cast_stop">Dừng chiếu</string>
+    <string name="cast_error_start">Máy không cho chụp màn hình. Hãy thử lại.</string>
+</resources>

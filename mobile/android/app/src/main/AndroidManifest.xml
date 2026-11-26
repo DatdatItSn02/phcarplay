@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Biết khi nào có mạng trở lại để tự tải lại trang "Không kết nối được". -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Giai đoạn 15 - nghe nhạc trong nền: dịch vụ nền loại "phát nhạc", thông báo có nút điều khiển (Android 13+ hỏi quyền),
+         giữ máy/Wi-Fi thức lúc đang phát để tự chuyển bài khi màn hình tắt. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Giai đoạn 15 (đợt 2) - chiếu màn hình lên xe: dịch vụ nền loại "chụp màn hình". Android vẫn hỏi người dùng mỗi lần chiếu. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Màn hình xe Android: không bắt buộc màn hình cảm ứng đa điểm. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!--
+      usesCleartextTraffic: chỉ "true" khi webUrl trong mobile/config/app.json là http:// (thử trong mạng nội bộ).
+      enableOnBackInvokedCallback: Android 13+ nhận nút Quay lại qua OnBackInvokedCallback (MainActivity).
+    -->
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="${usesCleartextTraffic}"
+        android:enableOnBackInvokedCallback="true">
+
+        <!-- configChanges: xoay màn hình, đổi chế độ ngày/đêm, cắm bàn phím... không dựng lại màn hình nên nhạc không bị ngắt. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|layoutDirection|locale"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Không tự phát nhạc: chỉ giữ ứng dụng sống và hiện thông báo khi website trong MainActivity đang phát (PlaybackService.java). -->
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Chụp màn hình để chiếu lên màn hình xe; ảnh chỉ nằm trong bộ nhớ ứng dụng (CastService.java, FrameStore.java). -->
+        <service
+            android:name=".CastService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+    </application>
+</manifest>

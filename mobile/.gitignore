@@ -1,0 +1,21 @@
+# Android: tệp sinh ra khi build và đường dẫn SDK trên máy bạn
+android/.gradle/
+android/.idea/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+android/*.iml
+android/app/*.iml
+# Khóa ký phát hành riêng của bạn: TUYỆT ĐỐI không đưa lên mạng
+*.jks
+release.keystore
+keystore.properties
+# iOS: dự án Xcode và cấu hình do generate.sh sinh ra
+ios/PHCarPlay.xcodeproj/
+ios/Config.xcconfig
+ios/build/
+ios/DerivedData/
+xcuserdata/
+.DS_Store

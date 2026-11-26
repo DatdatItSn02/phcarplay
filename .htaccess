@@ -1,0 +1,21 @@
+# PH Car Play - file này chỉ có tác dụng khi thư mục web (document root) LỠ trỏ vào thư mục gốc của dự án
+# thay vì thư mục public/ (hay gặp khi tải cả dự án lên public_html của hosting cPanel).
+# Nó chuyển mọi yêu cầu vào public/ để không ai đọc được .env, storage/, app/... Cách đúng vẫn là trỏ
+# document root vào public/ (xem docs/DEPLOY.md).
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Luôn chặn các file ẩn (.env, .git...), kể cả khi máy chủ không có mod_rewrite.
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

@@ -1,0 +1,8 @@
+# Thư mục này chứa mã nguồn/dữ liệu nội bộ, không được truy cập qua web.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
