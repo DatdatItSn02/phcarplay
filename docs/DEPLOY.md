@@ -120,6 +120,8 @@ Riêng lần cập nhật lên bản giai đoạn 14: **phải chạy `php bin/m
 
 Riêng lần cập nhật lên bản giai đoạn 17: website tự cập nhật từ GitHub (mục 6b); không phải chép file hay chạy SQL bằng tay nữa.
 
+Riêng lần cập nhật lên bản giai đoạn 17 đợt 2 (ghép đôi một lần, nút "Chia sẻ"): có migration `012_cast_pairs.sql` (thêm bảng `cast_pairs` và cột `cast_sessions.pair_id`; không đụng dữ liệu cũ) - bản tự cập nhật sẽ sao lưu database rồi tự chạy. Không bắt buộc đổi `.env`; muốn chỉnh nhịp màn hình xe hỏi lời mời thì thêm `CAST_POLL_SECONDS=3` (2-60 giây; chỉ màn hình xe đã ghép đôi mới hỏi). Không cần build lại ứng dụng: ứng dụng Android 1.2.0 dùng được ngay.
+
 Riêng lần cập nhật lên bản giai đoạn 16: không có migration. Chép đè các file; mục "Đổi mật khẩu" trong Cài đặt của người dùng được ẩn (đổi bằng "Quên mật khẩu?"). Kiểm tra gửi email ở trang quản trị > Tổng quan > **Gửi email**. Không phải build lại ứng dụng Android/iOS.
 
 Riêng lần cập nhật lên bản giai đoạn 13: không có migration mới, không đổi `.env`. Website nhận ra khi được mở trong ứng dụng Android/iOS (thư mục `mobile/`, hướng dẫn build ở `mobile/README.md`). Nhớ tải lên cả `public/.htaccess` mới (thêm `Cache-Control: no-cache` cho JS/CSS). **Từ giai đoạn này:** thay đổi chỉ ở website thì ứng dụng nhận ngay khi mở lại, không phải build lại; thay đổi trong `mobile/` thì phải build lại ứng dụng (tăng `versionCode` trong `mobile/config/app.json`).

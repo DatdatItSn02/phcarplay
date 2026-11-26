@@ -11,7 +11,7 @@
 // shell.js đặt el cạnh .app (trong .screen) và nghe onLayout({ active, side, full, stacked }).
 import { h, clear } from '../../core/dom.js';
 import { icon } from '../../core/icons.js';
-import { openDialog } from '../../core/dialog.js';
+import { openDialog, confirmAction } from '../../core/dialog.js';
 import { showToast } from '../../core/toast.js';
 import { createCastReceiver } from './castReceiver.js';
 import { createCastFloat } from './castFloat.js';
@@ -45,7 +45,7 @@ const mmss = (ms) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
-export function createCastScreen({ castApi, media, onLayout = () => {}, receiverFactory = createCastReceiver }) {
+export function createCastScreen({ castApi, media, onLayout = () => {}, receiverFactory = createCastReceiver, device = null, receiverName = '', onPaired = () => {} }) {
   const prefs = loadPrefs();
   let full = false;            // "Toàn màn hình": hình điện thoại chiếm cả màn hình, nhạc là cửa sổ nổi
   let frameW = 0;
@@ -92,9 +92,16 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
 
   const receiver = receiverFactory({
     castApi,
+    device,
+    name: receiverName,
     onChange: render,
     onFrame: draw,
-    onEnded: (by) => { showToast(by === 'sender' ? 'Điện thoại đã dừng chiếu.' : 'Đã mất kết nối với điện thoại. Hãy ghép nối lại.', 4500); },
+    onPaired,
+    onEnded: (by, wasLive) => {
+      if (wasLive !== false) { showToast(by === 'sender' ? 'Điện thoại đã dừng chiếu.' : 'Đã mất kết nối với điện thoại. Hãy ghép nối lại.', 4500); return; }
+      // "Chia sẻ" chưa kịp có hình (giai đoạn 17)
+      showToast(by === 'sender' ? 'Điện thoại đã hủy chia sẻ màn hình.' : 'Không nối được với điện thoại. Hãy kiểm tra hai máy có đang chung mạng không.', 5000);
+    },
   });
 
   // ----- vẽ ảnh nhận được -----
@@ -269,11 +276,48 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
         h('div', { class: 'cast-ways' },
           h('div', { class: 'cast-way' }, icon('usb', 26), h('span', {}, h('b', {}, 'Cắm dây (Android): '), 'nối điện thoại với màn hình xe, trên điện thoại bật Cài đặt > Điểm phát sóng và chia sẻ kết nối > Chia sẻ kết nối qua USB.')),
           h('div', { class: 'cast-way' }, icon('wifi', 26), h('span', {}, h('b', {}, 'Wi-Fi: '), 'bật Điểm phát sóng Wi-Fi trên điện thoại, cho màn hình xe vào Wi-Fi đó.')))),
-      h('li', {}, 'Trên điện thoại mở ứng dụng ', h('strong', {}, 'PH Car Play'), ' > Cài đặt > ', h('strong', {}, 'Chiếu lên màn hình xe'), '.'),
-      h('li', {}, 'Nhập mã ở trên. Màn hình này sẽ tự chia đôi: bản đồ một bên, nhạc một bên.'));
+      h('li', {}, 'Trên điện thoại mở ứng dụng ', h('strong', {}, 'PH Car Play'), ', bấm ', h('strong', {}, 'Chia sẻ'), ' (hoặc Cài đặt > Chiếu lên màn hình xe).'),
+      h('li', {}, 'Nhập mã ở trên. Màn hình này sẽ tự chia đôi: bản đồ một bên, nhạc một bên. ',
+        h('strong', {}, 'Lần sau không cần mã'), ': điện thoại chỉ cần bấm Chia sẻ.'));
+    // giai đoạn 17: điện thoại đã ghép đôi với màn hình này (bấm "Chia sẻ" là chiếu, không cần mã)
+    const pairList = h('ul', { class: 'cast-pairs' });
+    const pairMsg = h('p', { class: 'cast-pair-msg', role: 'status', hidden: true });
+    const paired = h('section', { class: 'cast-paired', hidden: true, 'aria-label': 'Điện thoại đã ghép đôi' },
+      h('h3', {}, 'Điện thoại đã ghép đôi'),
+      h('p', { class: 'hint' }, 'Các điện thoại này chỉ cần bấm "Chia sẻ" trong ứng dụng PH Car Play, không cần mã.'),
+      pairList, pairMsg);
+    const drawPairs = (rows) => {
+      clear(pairList);
+      rows.forEach((p) => {
+        pairList.append(h('li', { class: 'cast-pair-row' },
+          h('span', { class: 'cast-pair-info' }, icon('phone', 24), h('span', { class: 'cast-pair-text' }, h('span', { class: 'cast-pair-name' }, p.name),
+            p.created_at ? h('span', { class: 'cast-pair-sub' }, `Ghép đôi ngày ${String(p.created_at).slice(8, 10)}/${String(p.created_at).slice(5, 7)}/${String(p.created_at).slice(0, 4)}`) : null)),
+          h('button', { type: 'button', class: 'btn btn-ghost cast-pair-forget', 'aria-label': `Quên ${p.name}`, onclick: async () => {
+            const ok = await confirmAction({ title: 'Quên điện thoại này?', message: `"${p.name}" sẽ phải nhập mã lại mới chiếu lên màn hình này được.`, confirmLabel: 'Quên', danger: true });
+            if (!ok) return;
+            try {
+              await castApi.forget(p.id, device.key());
+              loadPairs();
+            } catch (e) {
+              pairMsg.textContent = (e && e.message) || 'Không quên được. Kiểm tra mạng rồi thử lại.';
+              pairMsg.hidden = false;
+            }
+          } }, 'Quên')));
+      });
+      paired.hidden = rows.length === 0;
+    };
+    const loadPairs = () => {
+      if (!device) return;
+      castApi.pairs(device.key()).then((data) => {
+        const rows = (data && Array.isArray(data.pairs) ? data.pairs : []).filter((p) => p.role === 'receiver');
+        if (!rows.length) device.setPaired(false);
+        if (dialog) drawPairs(rows);
+      }, () => { /* không tải được: không hiện mục này */ });
+    };
     const body = h('div', { class: 'cast-pair' },
       noticeEl, codeEl, timerEl, statusEl, steps,
       h('p', { class: 'hint' }, 'Hiện chỉ điện thoại Android chiếu được. Hình đi thẳng giữa hai máy, không qua máy chủ.'),
+      paired,
       h('div', { class: 'dialog-actions' }, renewBtn));
     const paint = (s) => {
       noticeEl.textContent = s.notice || '';
@@ -288,7 +332,7 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
       if (s.phase === 'error') statusEl.textContent = s.message;
       else if (s.phase === 'connecting') {
         const slow = connectingSince && Date.now() - connectingSince > SLOW_CONNECT_MS;
-        statusEl.textContent = `${s.deviceName ? `"${s.deviceName}"` : 'Điện thoại'} đã nhập mã. Đang nối...`
+        statusEl.textContent = `${s.deviceName ? `"${s.deviceName}"` : 'Điện thoại'} ${s.via === 'share' ? 'đang chia sẻ màn hình' : 'đã nhập mã'}. Đang nối...`
           + (slow ? ' Chưa nối được: hãy kiểm tra hai máy có đang chung mạng không (cắm dây + chia sẻ kết nối qua USB, hoặc cùng Wi-Fi phát từ điện thoại).' : '');
       } else statusEl.textContent = '';
       statusEl.hidden = !statusEl.textContent;
@@ -310,6 +354,7 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
     dialog.paint = paint;
     paint(receiver.snapshot());
     dialogTimer = setInterval(() => { if (dialog) paint(receiver.snapshot()); }, 1000);
+    loadPairs();
   }
 
   function render(s) {
@@ -346,6 +391,16 @@ export function createCastScreen({ castApi, media, onLayout = () => {}, receiver
     },
     stop: () => stop(false),
     isLive: () => receiver.isLive(),
+    /**
+     * Giai đoạn 17: điện thoại đã ghép đôi vừa bấm "Chia sẻ" (castIncoming.js nhận được lời mời): nối luôn.
+     * Đang chiếu thì bỏ qua (trả về false).
+     */
+    acceptIncoming(incoming, iceServers) {
+      if (destroyed || receiver.isLive() || typeof window.RTCPeerConnection !== 'function') return false;
+      const ok = receiver.accept(incoming, iceServers);
+      if (ok && !dialog) showToast(`${incoming.device_name ? `"${incoming.device_name}"` : 'Điện thoại'} đang chia sẻ màn hình. Đang nối...`, 4000);
+      return ok;
+    },
     /** Đang "Toàn màn hình" thì trở lại chia đôi (nút Quay lại của ứng dụng). Trả về true nếu đã xử lý. */
     leaveFull() { if (!full) return false; setFull(false); return true; },
     isFull: () => full,

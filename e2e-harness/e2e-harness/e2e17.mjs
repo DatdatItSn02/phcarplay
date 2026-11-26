@@ -193,6 +193,15 @@ const canvasInfo = (page) => page.evaluate(() => {
 });
 const waitFor = async (fn, ms = 12000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(150); } return false; };
 const openSettings = async (page) => { await page.locator('.rail-settings').click(); await page.locator('.settings').waitFor(); };
+// giai đoạn 17: điện thoại đã ghép đôi thì hộp hiện danh sách màn hình xe; nhập mã mới phải bấm "Thêm màn hình xe khác"
+// dòng trạng thái của hộp trên điện thoại (giai đoạn 17: lỗi ở .cast-status, bước đang làm ở .cast-busy-text)
+const phoneStatus = (page) => page.locator('.cast-send').evaluate((e) => [...e.querySelectorAll('.cast-status, .cast-busy-text')].filter((x) => x.getClientRects().length).map((x) => x.textContent).join(' | ')).catch(() => '');
+const showCodeForm = async (page) => {
+  const add = page.getByRole('button', { name: 'Thêm màn hình xe khác (nhập mã)' });
+  await sleep(300);
+  if (await add.isVisible()) await add.click();
+  await page.locator('#cast-code').waitFor();
+};
 const carCode = async (page) => (await page.locator('.cast-code').textContent()).replace(/[^0-9]/g, '');
 // ghi lại các RTCPeerConnection của trang để kịch bản tự làm đứt kết nối
 const spyPeers = (page) => page.addInitScript(() => {
@@ -245,14 +254,14 @@ const wrong = code1 === '000000' ? '111111' : '000000';
 await codeInput.fill(wrong);
 await phone.getByRole('button', { name: 'Kết nối' }).click();
 await phone.locator('.cast-send .cast-status.error').waitFor({ timeout: 6000 }).catch(() => {});
-check('B4 nhập sai mã: báo lỗi, chưa xin quyền ghi màn hình', /Mã không đúng/.test(await phone.locator('.cast-send .cast-status').textContent()) && (await castMsgs(phone)).length === 0);
+check('B4 nhập sai mã: báo lỗi, chưa xin quyền ghi màn hình', /Mã không đúng/.test(await phoneStatus(phone)) && (await castMsgs(phone)).length === 0);
 await codeInput.fill(code1);
 check('B5 mã tự tách 3-3 cho dễ nhìn', (await codeInput.inputValue()) === code1.slice(0, 3) + ' ' + code1.slice(3));
 await phone.getByRole('button', { name: 'Kết nối' }).click();
 await waitFor(async () => (await castMsgs(phone)).length === 1);
 const startMsg = (await castMsgs(phone))[0] || {};
 check('B6 mã đúng: website bảo ứng dụng chụp màn hình', startMsg.type === 'cast.start' && startMsg.maxSide === 1280 && startMsg.quality === 70 && startMsg.fps === 12, JSON.stringify(startMsg));
-check('B6 điện thoại nhắc chọn "Bắt đầu" ở hộp hỏi quyền của Android', /hỏi quyền ghi màn hình/.test(await phone.locator('.cast-send .cast-status').textContent()));
+check('B6 điện thoại nhắc chọn "Bắt đầu" ở hộp hỏi quyền của Android', /hỏi quyền ghi màn hình/.test(await phoneStatus(phone)));
 await car.locator('.cast-status').filter({ hasText: 'đã nhập mã' }).waitFor({ timeout: 6000 }).catch(() => {});
 check('B7 màn hình xe: báo tên điện thoại đã nhập mã, đang nối', /"SM-A546E" đã nhập mã\. Đang nối/.test(await car.locator('.cast-status').textContent()));
 
@@ -285,7 +294,7 @@ check('C8 nửa màn hình vẫn đủ chỗ: ô tìm kiếm, thanh phát nhỏ 
 await car.locator('.toast').filter({ hasText: 'Kéo hình' }).waitFor({ timeout: 4000 }).catch(() => {});
 check('C9 lần đầu có lời nhắc "Kéo hình để chọn phần bản đồ muốn xem"', /Kéo hình để chọn phần bản đồ muốn xem/.test(await car.locator('.toast').textContent().catch(() => '')));
 await phone.locator('.cast-live-title').waitFor({ timeout: 6000 }).catch(() => {});
-check('C10 điện thoại: báo đang chiếu, có nút Dừng chiếu, nhắc mở bản đồ', /Đang chiếu lên màn hình xe/.test(await phone.locator('.cast-live-title').textContent())
+check('C10 điện thoại: báo đang chiếu, có nút Dừng chiếu, nhắc mở bản đồ', /Đang chiếu lên (màn hình xe|"Màn hình xe")/.test(await phone.locator('.cast-live-title').textContent())
   && await phone.getByRole('button', { name: 'Dừng chiếu' }).isVisible() && /bản đồ/.test(await phone.locator('.cast-tips').textContent()));
 check('C11 điện thoại tự dừng nhạc của mình khi bắt đầu chiếu', !(await isPlaying(phone)));
 await car.locator('.toast').waitFor({ state: 'hidden', timeout: 9000 }).catch(() => {});
@@ -369,7 +378,7 @@ await car.getByRole('button', { name: 'Dừng chiếu' }).click();
 const closed = await waitFor(async () => (await attr(car, 'data-cast')) === null);
 const g1 = { closed, pane: await rect(car, '.cast-pane'), app: await rect(car, '.app'), focus: await focusOf(car), playing: await isPlaying(car), pressed: await castBtn.getAttribute('aria-pressed') };
 check('G1 màn hình xe bấm "Dừng chiếu": ứng dụng trở lại toàn màn hình như trước, nhạc vẫn phát', g1.closed && g1.pane === null && g1.app.l === 0 && Math.abs(g1.app.w - 1024) <= 1 && !g1.focus && g1.playing && g1.pressed === 'false', JSON.stringify(g1));
-const told = await waitFor(async () => /Màn hình xe đã dừng chiếu/.test(await phone.locator('.cast-send .cast-status').textContent()));
+const told = await waitFor(async () => /Màn hình xe đã dừng chiếu/.test(await phoneStatus(phone)));
 const msgs = await castMsgs(phone);
 check('G2 điện thoại biết ngay và bảo ứng dụng ngừng chụp', told && msgs[msgs.length - 1].type === 'cast.stop', JSON.stringify(msgs.map((m) => m.type)));
 cap.on = false;
@@ -379,10 +388,11 @@ await castBtn.click();
 await car.waitForFunction((old) => { const e = document.querySelector('.cast-code'); return e && /^[0-9]{3} [0-9]{3}$/.test(e.textContent) && e.textContent.replace(' ', '') !== old; }, code1, { timeout: 8000 });
 const code2 = await carCode(car);
 check('H1 lần sau lấy mã mới (mã cũ không dùng lại)', code2.length === 6 && code2 !== code1);
+await showCodeForm(phone);
 await codeInput.fill(code1);
 await phone.getByRole('button', { name: 'Kết nối' }).click();
-await waitFor(async () => /Mã không đúng/.test(await phone.locator('.cast-send .cast-status').textContent()));
-check('H2 mã cũ đã dùng thì bị từ chối', /Mã không đúng/.test(await phone.locator('.cast-send .cast-status').textContent()));
+await waitFor(async () => /Mã không đúng/.test(await phoneStatus(phone)));
+check('H2 mã cũ đã dùng thì bị từ chối', /Mã không đúng/.test(await phoneStatus(phone)));
 await codeInput.fill(code2);
 await phone.getByRole('button', { name: 'Kết nối' }).click();
 await waitFor(async () => (await castMsgs(phone)).filter((m) => m.type === 'cast.start').length === 2);
@@ -392,19 +402,21 @@ check('H3 nối lại lần 2', await waitFor(async () => (await attr(car, 'data
 await phone.getByRole('button', { name: 'Dừng chiếu' }).click();
 const carClosed = await waitFor(async () => (await attr(car, 'data-cast')) === null);
 check('H4 điện thoại bấm "Dừng chiếu": màn hình xe trở lại bình thường và báo "Điện thoại đã dừng chiếu"', carClosed && /Điện thoại đã dừng chiếu/.test(await car.locator('.toast').textContent()));
-check('H5 điện thoại trở về ô nhập mã, ứng dụng được bảo ngừng chụp', await codeInput.isVisible() && (await castMsgs(phone)).pop().type === 'cast.stop');
+await phone.locator('.cast-pair-go').first().waitFor({ timeout: 6000 }).catch(() => {});
+check('H5 điện thoại trở về danh sách màn hình xe đã ghép đôi (giai đoạn 17), ứng dụng được bảo ngừng chụp', await phone.locator('.cast-pair-go').first().isVisible() && (await castMsgs(phone)).pop().type === 'cast.stop');
 cap.on = false;
 
 // ---------- I. Người dùng không cho ghi màn hình ----------
 await castBtn.click();
 await car.waitForFunction((old) => { const e = document.querySelector('.cast-code'); return e && /^[0-9]{3} [0-9]{3}$/.test(e.textContent) && e.textContent.replace(' ', '') !== old; }, code2, { timeout: 8000 });
 const code3 = await carCode(car);
+await showCodeForm(phone);
 await codeInput.fill(code3);
 await phone.getByRole('button', { name: 'Kết nối' }).click();
 await waitFor(async () => (await castMsgs(phone)).filter((m) => m.type === 'cast.start').length === 3);
 await phone.evaluate(() => window.__phApp.cast('denied'));
-await waitFor(async () => /chưa cho phép ghi màn hình/.test(await phone.locator('.cast-send .cast-status').textContent()));
-check('I1 từ chối quyền: điện thoại giải thích và cho thử lại', /chưa cho phép ghi màn hình/.test(await phone.locator('.cast-send .cast-status').textContent()) && await codeInput.isEnabled());
+await waitFor(async () => /chưa cho phép ghi màn hình/.test(await phoneStatus(phone)));
+check('I1 từ chối quyền: điện thoại giải thích và cho thử lại', /chưa cho phép ghi màn hình/.test(await phoneStatus(phone)) && await codeInput.isEnabled());
 const renewed = await waitFor(async () => { const t = await car.locator('.cast-code').textContent().catch(() => ''); return /^[0-9]{3} [0-9]{3}$/.test(t) && t.replace(' ', '') !== code3; }, 10000);
 check('I2 màn hình xe tự hiện mã mới kèm lời nhắc', renewed && /Điện thoại đã hủy/.test(await car.locator('.cast-notice').textContent()));
 await car.keyboard.press('Escape');

@@ -66,6 +66,7 @@ function adminSqliteDdl(): array
             receiver_hash TEXT NOT NULL,
             sender_hash TEXT NULL,
             device_name TEXT NOT NULL DEFAULT '',
+            pair_id INTEGER NULL,
             created_ip TEXT NOT NULL DEFAULT '',
             joined_ip TEXT NOT NULL DEFAULT '',
             code_expires_at TEXT NOT NULL,
@@ -82,6 +83,20 @@ function adminSqliteDdl(): array
             kind TEXT NOT NULL,
             payload TEXT NOT NULL,
             created_at TEXT NOT NULL
+        )",
+        "CREATE TABLE IF NOT EXISTS cast_pairs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receiver_hash TEXT NOT NULL,
+            sender_hash TEXT NOT NULL,
+            receiver_name TEXT NOT NULL DEFAULT '',
+            sender_name TEXT NOT NULL DEFAULT '',
+            request_session_id INTEGER NULL,
+            request_at TEXT NULL,
+            last_used_at TEXT NULL,
+            created_ip TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            deleted_at TEXT NULL,
+            deleted_by TEXT NULL
         )",
         "CREATE TABLE IF NOT EXISTS password_resets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

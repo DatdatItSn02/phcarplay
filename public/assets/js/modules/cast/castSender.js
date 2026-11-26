@@ -1,11 +1,16 @@
 // Giai đoạn 15: phía ĐIỆN THOẠI của chức năng chiếu màn hình (chạy trong ứng dụng Android từ bản 1.2.0; chỉ có logic).
 // start(mã) -> nhập mã với máy chủ -> bảo ứng dụng chụp màn hình (Android hỏi quyền) -> nối thẳng với màn hình xe
 //           -> lấy từng ảnh JPEG ứng dụng vừa chụp (fetch '/__cast/frame') và gửi qua kênh dữ liệu.
-// Trạng thái (snapshot().phase): 'idle' | 'joining' | 'permission' | 'connecting' | 'live' | 'reconnecting' | 'error'
+// Giai đoạn 17 (đợt 2): có khóa thiết bị (device) thì nhập mã xong là GHÉP ĐÔI với màn hình xe đó (onPaired); lần sau
+// share(cặp) -> Android hỏi quyền -> gửi lời mời cho đúng màn hình xe đã ghép đôi (không cần mã) -> màn hình xe tự nhận.
+// Trạng thái (snapshot().phase): 'idle' | 'joining' | 'permission' | 'sharing' | 'connecting' | 'live' | 'reconnecting' | 'error'
+// snapshot().via: 'code' | 'share';  target: { id, name } màn hình xe đang chia sẻ tới;  picked: màn hình xe đã nhận lời mời.
 import { createCastLink } from './castLink.js';
 import { cleanCode, encodeFrame, HIGH_WATER_BYTES } from './castProtocol.js';
 
 const PERMISSION_TIMEOUT_MS = 90000;   // người dùng đọc hộp hỏi quyền của Android
+export const SHARE_PICK_MS = 30000;    // "Chia sẻ": màn hình xe chưa nhận lời mời sau chừng này -> báo (chưa mở PH Car Play?)
+export const SHARE_CONNECT_MS = 50000; // đã nhận nhưng chưa nối được sau chừng này -> báo (hai máy chưa chung mạng?)
 const IDLE_WAIT_MS = 250;              // chưa có ảnh mới: chờ ứng dụng báo 'frame' hoặc hết chừng này thì hỏi lại
 const BUSY_WAIT_MS = 40;               // kênh đang kẹt: chờ rồi thử lại (bỏ bớt ảnh)
 export const CAPTURE_OPTIONS = { maxSide: 1280, quality: 70, fps: 12 };
@@ -18,12 +23,12 @@ export function deviceNameFromUa(ua) {
 }
 
 export function createCastSender({
-  castApi, nativeApp, makeLink = createCastLink,
+  castApi, nativeApp, makeLink = createCastLink, device = null,
   fetchImpl = (...a) => fetch(...a),
   frameUrl = () => new URL('/__cast/frame', window.location.origin).toString(),
   deviceName = () => deviceNameFromUa(typeof navigator !== 'undefined' ? navigator.userAgent : ''),
   timers = { set: (fn, ms) => setTimeout(fn, ms), clear: (id) => clearTimeout(id) },
-  onChange = () => {}, onBeforeLive = () => {},
+  onChange = () => {}, onBeforeLive = () => {}, onPaired = () => {},
 }) {
   let phase = 'idle';
   let message = '';
@@ -36,8 +41,12 @@ export function createCastSender({
   let permissionTimer = null;
   let frameWaiter = null;     // hàm đánh thức vòng lấy ảnh khi ứng dụng báo có ảnh mới
   let pumping = false;
+  let via = 'code';
+  let target = null;          // { id, name }: màn hình xe đã ghép đôi đang chia sẻ tới
+  let picked = false;
+  let shareTimers = [];
 
-  const snapshot = () => ({ phase, message, sent, width: size.width, height: size.height });
+  const snapshot = () => ({ phase, message, sent, width: size.width, height: size.height, via, target, picked });
   const set = (p, msg = '') => { phase = p; message = msg; onChange(snapshot()); };
   const active = () => phase !== 'idle' && phase !== 'error';
 
@@ -48,9 +57,12 @@ export function createCastSender({
     frameWaiter = done;
   });
 
+  function clearShareTimers() { shareTimers.forEach((t) => timers.clear(t)); shareTimers = []; }
+
   function teardown(tellPeer) {
     run += 1;
     timers.clear(permissionTimer);
+    clearShareTimers();
     const l = link;
     const s = session;
     link = null;
@@ -117,9 +129,14 @@ export function createCastSender({
       role: 'sender', session, iceServers: ice, castApi,
       onState: (s) => {
         if (my !== run) return;
-        if (s === 'connected') set('live');
+        if (s === 'connected') { clearShareTimers(); set('live'); }
         else if (s === 'reconnecting') set('reconnecting');
         else if (s === 'connecting') set('connecting');
+      },
+      onInfo: (info) => {
+        if (my !== run || !info.picked || picked) return;
+        picked = true;   // màn hình xe đã nhận lời mời "Chia sẻ"
+        onChange(snapshot());
       },
       onChannel: (ch) => {
         if (my !== run || !ch) return;
@@ -137,12 +154,45 @@ export function createCastSender({
         run += 1;
         if (capturing) { capturing = false; nativeApp.castStop(); }
         wake();
+        clearShareTimers();
         if (by === 'sender') { set('idle'); return; }
-        set('error', by === 'receiver' ? 'Màn hình xe đã dừng chiếu.' : (by === 'unsupported' ? 'Ứng dụng này chưa hỗ trợ kết nối trực tiếp (WebView quá cũ).' : 'Phiên chiếu đã kết thúc. Hãy lấy mã mới trên màn hình xe.'));
+        set('error', by === 'receiver' ? 'Màn hình xe đã dừng chiếu.' : (by === 'unsupported' ? 'Ứng dụng này chưa hỗ trợ kết nối trực tiếp (WebView quá cũ).'
+          : (via === 'share' ? 'Phiên chiếu đã kết thúc. Hãy bấm "Chia sẻ" lại.' : 'Phiên chiếu đã kết thúc. Hãy lấy mã mới trên màn hình xe.')));
       },
     });
     link.start();
     pump(my);
+  }
+
+  const retryWord = () => (via === 'share' ? 'Chia sẻ' : 'Kết nối');
+
+  /** "Chia sẻ": Android đã cho chụp màn hình -> gửi lời mời cho màn hình xe đã ghép đôi rồi nối. */
+  async function sendInvite(my) {
+    set('sharing');
+    let data;
+    try {
+      data = await castApi.share(target.id, device.key(), deviceName());
+    } catch (e) {
+      if (my === run) fail((e && e.message) || 'Không gửi được lời mời tới màn hình xe. Kiểm tra mạng rồi thử lại.');
+      return;
+    }
+    if (my !== run) { castApi.end({ id: data.id, token: device.key() }).catch(() => {}); return; }
+    if (data.pair && data.pair.name) target = { id: target.id, name: data.pair.name };
+    session = { id: data.id, token: device.key(), ice: data.ice_servers || [] };
+    onBeforeLive();
+    set('connecting');
+    connect(my, session.ice);
+    const name = target.name || 'Màn hình xe';
+    shareTimers.push(timers.set(() => {
+      if (my === run && phase === 'connecting' && !picked) {
+        fail(`"${name}" chưa nhận lời mời. Hãy mở PH Car Play trên màn hình xe rồi bấm "Chia sẻ" lại. Nếu màn hình xe vừa xóa dữ liệu hoặc cài lại, hãy bấm "Quên" rồi ghép đôi lại bằng mã.`);
+      }
+    }, SHARE_PICK_MS));
+    shareTimers.push(timers.set(() => {
+      if (my === run && phase === 'connecting') {
+        fail(`Chưa nối được với "${name}": hãy kiểm tra hai máy có đang chung mạng không (cắm dây + bật "Chia sẻ kết nối qua USB", hoặc cho màn hình xe dùng Wi-Fi phát từ điện thoại này).`);
+      }
+    }, SHARE_CONNECT_MS));
   }
 
   const offCast = nativeApp.onCast((event, data) => {
@@ -153,13 +203,14 @@ export function createCastSender({
       capturing = true;
       size = { width: Number(data.width) || 0, height: Number(data.height) || 0 };
       const my = run;
+      if (via === 'share') { sendInvite(my); return; }
       const ice = session.ice || [];
       onBeforeLive();
       set('connecting');
       connect(my, ice);
       return;
     }
-    if (event === 'denied') { if (phase === 'permission') fail('Bạn chưa cho phép ghi màn hình. Bấm "Kết nối" để thử lại và chọn "Bắt đầu".'); return; }
+    if (event === 'denied') { if (phase === 'permission') fail(`Bạn chưa cho phép ghi màn hình. Bấm "${retryWord()}" để thử lại và chọn "Bắt đầu".`); return; }
     if (event === 'error') { if (active()) fail((data && data.message) || 'Ứng dụng không chụp được màn hình.'); return; }
     if (event === 'stopped') {
       if (!active()) return;
@@ -168,6 +219,13 @@ export function createCastSender({
       set('idle');
     }
   });
+
+  function askPermission(my) {
+    set('permission');
+    if (!nativeApp.castStart(CAPTURE_OPTIONS)) { fail('Ứng dụng không nhận được lệnh chụp màn hình.'); return false; }
+    permissionTimer = timers.set(() => { if (my === run && phase === 'permission') fail(`Chưa thấy bạn cho phép ghi màn hình. Bấm "${retryWord()}" để thử lại.`); }, PERMISSION_TIMEOUT_MS);
+    return true;
+  }
 
   return {
     snapshot,
@@ -178,22 +236,43 @@ export function createCastSender({
       if (code.length !== 6) { set('error', 'Hãy nhập đủ 6 số của mã trên màn hình xe.'); return false; }
       const my = ++run;
       sent = 0;
+      via = 'code';
+      target = null;
+      picked = false;
       set('joining');
+      const key = device ? device.key() : '';
       let data;
       try {
-        data = await castApi.join(code, deviceName());
+        data = await castApi.join(code, deviceName(), key);
       } catch (e) {
         if (my === run) set('error', (e && e.message) || 'Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.');
         return false;
       }
-      if (my !== run) { castApi.end({ id: data.id, token: data.token }).catch(() => {}); return false; }
-      session = { id: data.id, token: data.token, ice: data.ice_servers || [] };
-      set('permission');
-      if (!nativeApp.castStart(CAPTURE_OPTIONS)) { fail('Ứng dụng không nhận được lệnh chụp màn hình.'); return false; }
-      permissionTimer = timers.set(() => { if (my === run && phase === 'permission') fail('Chưa thấy bạn cho phép ghi màn hình. Bấm "Kết nối" để thử lại.'); }, PERMISSION_TIMEOUT_MS);
-      return true;
+      const token = data.token || key;
+      if (my !== run) { castApi.end({ id: data.id, token }).catch(() => {}); return false; }
+      session = { id: data.id, token, ice: data.ice_servers || [] };
+      if (data.pair && data.pair.id) {
+        target = { id: Number(data.pair.id), name: String(data.pair.name || '') };
+        try { onPaired(target); } catch (e) { /* bỏ qua */ }
+      }
+      return askPermission(my);
     },
-    /** Người dùng bấm "Dừng chiếu" trên điện thoại. */
+    /**
+     * Giai đoạn 17: bấm "Chia sẻ màn hình" tới màn hình xe đã ghép đôi (pair: { id, name } từ castApi.pairs()).
+     * Android hỏi quyền trước; cho phép xong mới gửi lời mời (màn hình xe chỉ đổi khi điện thoại thật sự sẵn sàng).
+     */
+    share(pair) {
+      if (active()) return false;
+      if (!device || !pair || !(Number(pair.id) > 0)) return false;
+      const my = ++run;
+      sent = 0;
+      via = 'share';
+      target = { id: Number(pair.id), name: String(pair.name || '') };
+      picked = false;
+      session = null;
+      return askPermission(my);
+    },
+    /** Người dùng bấm "Dừng chiếu" (hoặc "Hủy" lúc đang nối) trên điện thoại. */
     stop() {
       if (!active()) { if (phase === 'error') set('idle'); return; }
       teardown(true);

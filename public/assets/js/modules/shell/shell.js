@@ -16,6 +16,8 @@ import { createCastApi } from '../cast/castApi.js';
 import { createCastScreen } from '../cast/castScreen.js';
 import { createCastSender } from '../cast/castSender.js';
 import { openCastSenderDialog } from '../cast/castSenderDialog.js';
+import { createCastDevice, receiverNameFromUa } from '../cast/castDevice.js';
+import { createCastIncoming } from '../cast/castIncoming.js';
 import { createVoicePause } from '../browser/voicePause.js';
 
 registerPanel(playerPanel);
@@ -215,13 +217,20 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
   // làm 2 bên: bản đồ chiếm trọn một bên (phía tài xế), cả ứng dụng nghe nhạc dồn sang bên kia và thu gọn thành
   // danh sách + thanh phát nhỏ (bấm thanh nhỏ để hiện lại video).
   // Giai đoạn 17: "Toàn màn hình" -> html[data-cast-full] ẩn cả .app, nhạc thành cửa sổ nổi trong khung chiếu (castFloat.js).
+  // Giai đoạn 17 (đợt 2): mỗi máy có khóa thiết bị để GHÉP ĐÔI một lần (castDevice.js); màn hình đã ghép đôi hỏi lời mời
+  // "Chia sẻ" vài giây một lần (castIncoming.js) và tự nhận.
   const castApi = createCastApi(api);
+  const castDevice = createCastDevice();
   const doc = document.documentElement;
   let castOn = false;
   let focusBeforeCast = null;
+  let incoming = null;
   const cast = createCastScreen({
     castApi,
     media,
+    device: castDevice,
+    receiverName: receiverNameFromUa(typeof navigator !== 'undefined' ? navigator.userAgent : ''),
+    onPaired: () => { if (incoming) incoming.paired(); },
     onLayout: (l) => {
       if (l.active) {
         doc.setAttribute('data-cast', l.stacked ? 'stacked' : 'side');
@@ -235,6 +244,7 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
       if (l.active === castOn) return;
       castOn = l.active;
       rail.setCasting(castOn);
+      if (!castOn && incoming) incoming.poke();   // vừa dừng chiếu: hỏi lời mời lại ngay
       if (castOn) {
         focusBeforeCast = split.controller.snapshot().focus || null;
         if (focusBeforeCast !== 'right') split.controller.setFocus('right');
@@ -243,21 +253,47 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
       }
     },
   });
-  // Điện thoại PHÁT hình: chỉ trong ứng dụng Android từ bản 1.2.0 (mở từ Cài đặt > "Chiếu lên màn hình xe").
+  if (typeof window.RTCPeerConnection === 'function') {
+    incoming = createCastIncoming({ castApi, device: castDevice, isBusy: () => cast.isLive(), onIncoming: (inc, ice) => cast.acceptIncoming(inc, ice) });
+    incoming.start();
+  }
+  const onVisible = () => { if (incoming && document.visibilityState !== 'hidden') incoming.poke(); };
+  document.addEventListener('visibilitychange', onVisible);
+
+  // Điện thoại PHÁT hình: chỉ trong ứng dụng Android từ bản 1.2.0. Giai đoạn 17: nút "Chia sẻ" ở thanh dưới cùng
+  // (một màn hình xe đã ghép đôi thì bấm là chia sẻ luôn), hoặc Cài đặt > "Chiếu lên màn hình xe".
   let castPhone = null;
   let castSender = null;
+  const senderWatchers = new Set();
   if (nativeApp && typeof nativeApp.supportsCast === 'function' && nativeApp.supportsCast()) {
-    const watchers = new Set();
     castSender = createCastSender({
       castApi,
       nativeApp,
-      onChange: (st) => watchers.forEach((fn) => { try { fn(st); } catch (e) { /* bỏ qua */ } }),
+      device: castDevice,
+      onChange: (st) => senderWatchers.forEach((fn) => { try { fn(st); } catch (e) { /* bỏ qua */ } }),
       // Điện thoại đang chiếu bản đồ thì không tự phát nhạc nữa (nhạc phát ở màn hình xe).
       onBeforeLive: () => { if (controllerOf(media).snapshot().current && !surfaceOf(media).paused) { const p = controllerOf(media).toggle(); if (p && p.catch) p.catch(() => {}); } },
     });
+    const subscribe = (fn) => { senderWatchers.add(fn); return () => senderWatchers.delete(fn); };
+    const loadPairs = () => castApi.pairs(castDevice.key()).then((d) => (d && Array.isArray(d.pairs) ? d.pairs.filter((p) => p.role === 'sender') : []));
+    const forget = (p) => castApi.forget(p.id, castDevice.key());
+    const openDlg = (initialPairs = null) => openCastSenderDialog({ sender: castSender, subscribe, loadPairs, forget, initialPairs });
+    let quickBusy = false;
     castPhone = {
       isActive: () => castSender.isActive(),
-      open: () => openCastSenderDialog({ sender: castSender, subscribe: (fn) => { watchers.add(fn); return () => watchers.delete(fn); } }),
+      open: () => openDlg(),
+      /** Nút "Chia sẻ": đang chiếu thì mở trạng thái; đúng một màn hình xe đã ghép đôi thì chia sẻ ngay; không thì cho chọn / nhập mã. */
+      async quickShare() {
+        if (quickBusy) return;
+        if (castSender.isActive()) { openDlg(); return; }
+        quickBusy = true;
+        let list = null;
+        try { list = await loadPairs(); } catch (e) { list = null; }
+        quickBusy = false;
+        if (castSender.isActive()) { openDlg(); return; }
+        if (list && list.length === 1) castSender.share(list[0]);
+        openDlg(list);
+      },
     };
   }
 
@@ -268,7 +304,9 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
     user,
     onSettings: () => openSettingsDlg(),
     onCast: () => { if (!cast.open() && cast.isLive()) showToast('Đang chiếu. Bấm "Dừng chiếu" ở khung bản đồ để dừng.'); },
+    onShare: castPhone ? () => castPhone.quickShare() : null,
   });
+  if (castPhone) senderWatchers.add((st) => rail.setSharing(st.phase === 'live' || st.phase === 'reconnecting'));
   browse.onChange((id) => rail.setActive(id));
   rail.setActive(browse.current());
   app.bindBack({ split, browse, select, cast });
@@ -298,8 +336,11 @@ export function mountShell(root, { appName, session, api, appearance, homeChips,
   return () => {
     voicePause.destroy();
     app.destroy();
+    if (incoming) incoming.stop();
+    document.removeEventListener('visibilitychange', onVisible);
     cast.destroy();
     if (castSender) castSender.destroy();
+    senderWatchers.clear();
     ['data-cast', 'data-cast-side', 'data-cast-full'].forEach((a) => doc.removeAttribute(a));
     typing.destroy();
     offSplit();

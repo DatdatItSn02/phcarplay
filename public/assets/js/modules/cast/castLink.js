@@ -195,7 +195,8 @@ export function createCastLink({
       const data = await castApi.pull(session, after);
       if (ended) return;
       failures = 0;
-      onInfo({ status: data.status, deviceName: data.device_name || '', codeExpiresIn: data.code_expires_in });
+      onInfo({ status: data.status, deviceName: data.device_name || '', codeExpiresIn: data.code_expires_in,
+        pairId: Number(data.pair_id) || 0, picked: data.picked === true });   // giai đoạn 17: ghép đôi / màn hình xe đã nhận lời mời
       if (role === 'receiver') {
         if (data.status === 'waiting') setState('waiting');
         else if (state === 'waiting' || state === 'idle') setState('connecting');

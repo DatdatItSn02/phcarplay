@@ -801,4 +801,36 @@ html[data-cast="side"] .browse[data-w="xs"] .skel-row { flex-direction: row; pad
 @media (max-height: 520px) { .cast-code { font-size: 3rem; } .cast-steps { gap: .375rem; font-size: .9375rem; } }
 /* Điện thoại không nhận hình chiếu: ẩn nút "Chiếu ĐT" (điện thoại là máy phát, mở từ Cài đặt) */
 @media (max-width: 40rem), (orientation: portrait) and (max-width: 60rem) { .rail-cast { display: none; } }
+/* Giai đoạn 17: nút "Chia sẻ" (điện thoại chia sẻ màn hình lên xe) chỉ hiện ở bố cục điện thoại; khi đó nút Sáng/Tối
+   nhường chỗ cho thanh dưới khỏi chật (vẫn đổi được trong Cài đặt > Giao diện) */
+.rail-share { display: none; }
+@media (max-width: 40rem), (orientation: portrait) and (max-width: 60rem) {
+  .rail-share { display: flex; }
+  .rail[data-share] .rail-theme { display: none; }
+}
+.rail-share[aria-pressed="true"] { color: var(--brand); }
+/* danh sách máy đã ghép đôi (hộp trên điện thoại và hộp mã trên màn hình xe) */
+.cast-pick, .cast-paired { display: grid; gap: .625rem; }
+.cast-paired { padding-top: .75rem; border-top: 1px solid var(--line); }
+.cast-paired h3 { margin: 0; font-size: 1rem; }
+.cast-paired .hint { margin: 0; }
+.cast-pairs { margin: 0; padding: 0; list-style: none; display: grid; gap: .5rem; }
+.cast-pair-row { display: flex; align-items: center; gap: .5rem; }
+.cast-pair-go, .cast-pair-info { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: .75rem; min-height: var(--tap-l); padding: .5rem .875rem;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-l); background: var(--surface-2); color: var(--text); text-align: left; }
+.cast-pair-go { cursor: pointer; font: inherit; }
+.cast-pair-go:hover { background: var(--chip-hover); }
+.cast-pair-go .ico { color: var(--brand); flex: none; }
+.cast-pair-info .ico { color: var(--text-2); flex: none; }
+.cast-pair-text { min-width: 0; display: grid; gap: .125rem; }
+.cast-pair-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cast-pair-sub { color: var(--text-2); font-size: .8125rem; }
+.cast-pair-forget { flex: none; }
+.cast-busy { display: grid; justify-items: center; gap: .75rem; padding: .5rem 0; text-align: center; }
+.cast-busy-text { margin: 0; line-height: 1.45; }
+.cast-loading { margin: 0; text-align: center; color: var(--text-2); }
+.cast-pair-msg { margin: 0; color: var(--danger); }
+.cast-busy-icon { display: grid; place-items: center; width: 3.5rem; height: 3.5rem; border-radius: 50%; background: var(--chip); color: var(--brand); animation: cast-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .cast-busy-icon { animation: none; } }
+@keyframes cast-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.9); opacity: .6; } }
 @media (prefers-reduced-motion: reduce) { .cast-spin { animation-duration: 3s; } }

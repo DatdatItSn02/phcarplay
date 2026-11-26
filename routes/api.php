@@ -40,6 +40,11 @@ return function (Router $router): void {
     $router->get('/cast/sessions/{id}/signals', [CastController::class, 'signals']);
     $router->post('/cast/sessions/{id}/signals', [CastController::class, 'send']);
     $router->post('/cast/sessions/{id}/end', [CastController::class, 'end']);
+    // Giai đoạn 17: ghép đôi một lần, lần sau bấm "Chia sẻ" là chiếu (khóa thiết bị trong header X-Cast-Device)
+    $router->get('/cast/pairs', [CastController::class, 'pairs']);
+    $router->get('/cast/incoming', [CastController::class, 'incoming']);
+    $router->post('/cast/pairs/{id}/share', [CastController::class, 'share']);
+    $router->post('/cast/pairs/{id}/forget', [CastController::class, 'forget']);
 
     // Cần đăng nhập (đúng thiết bị đang hợp lệ)
     $router->group([RequireUser::class], function (Router $r) {
