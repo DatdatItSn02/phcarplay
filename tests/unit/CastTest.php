@@ -240,3 +240,276 @@ test('Chiếu màn hình: không có lệnh DELETE trong mã ghép nối', funct
         assertTrue(preg_match('/\b(DELETE\s+FROM|TRUNCATE|REPLACE\s+INTO)\b/i', $src) === 0, $f);
     }
 });
+
+// ---------- Giai đoạn 17 (đợt 2): ghép đôi một lần, "Chia sẻ" một chạm, "Quên thiết bị" ----------
+
+/** Gọi API ghép đôi với khóa thiết bị trong header X-Cast-Device. */
+function ctDev(string $method, string $path, string $device, array $body = [], string $ip = '7.7.7.7')
+{
+    $_SESSION = ['csrf' => 'csrf-thu'];
+    $router = new Router();
+    $router->setGlobalMiddleware([Csrf::class]);
+    (require BASE_PATH . '/routes/api.php')($router);
+    $headers = ['user-agent' => 'Thử', 'x-csrf-token' => 'csrf-thu'];
+    if ($device !== '') {
+        $headers['x-cast-device'] = $device;
+    }
+    try {
+        return @$router->dispatch(new Request($method, $path, [], $body, $headers, $ip));
+    } catch (Throwable $e) {
+        return ErrorHandler::toResponse($e);
+    }
+}
+
+/** Ghép đôi xe (khóa $car) với điện thoại (khóa $phone) bằng mã; trả về [phiên xe, kết quả nhập mã]. */
+function ctPairUp(string $car, string $phone, string $carName = 'TS10', string $phoneName = 'SM-A546E', string $ip = '7.7.7.7'): array
+{
+    $s = ctData(ctCall('POST', '/cast/sessions', ['device_key' => $car, 'device_name' => $carName], '', [], $ip));
+    $j = ctData(ctCall('POST', '/cast/join', ['code' => $s['code'], 'device_name' => $phoneName, 'device_key' => $phone], '', [], $ip));
+    return [$s, $j];
+}
+
+test('Ghép đôi: lần đầu nhập mã kèm khóa thiết bị thì hai máy thành một cặp; máy dùng chính khóa thiết bị cho phiên', function () {
+    $S = ctBoot();
+    try {
+        $car = str_repeat('c1', 24);
+        $phone = str_repeat('d2', 24);
+        $s = ctData(ctCall('POST', '/cast/sessions', ['device_key' => $car, 'device_name' => 'TS10']));
+        assertTrue(!isset($s['token']), 'có khóa thiết bị thì máy chủ không cấp khóa mới');
+        $row = $S->db->one('SELECT * FROM cast_sessions WHERE id = ?', [$s['id']]);
+        assertSame(CastService::hash($car), $row['receiver_hash']);
+        assertSame(0, (int) $row['pair_id'], 'phiên ghép đôi được');
+        assertSame('TS10', $row['device_name'], 'tạm giữ tên màn hình xe');
+        $wait = ctData(ctCall('GET', '/cast/sessions/' . $s['id'] . '/signals', [], $car));
+        assertSame('waiting', $wait['status']);
+        assertSame('', $wait['device_name'], 'chưa có điện thoại thì không trả tên');
+
+        $j = ctData(ctCall('POST', '/cast/join', ['code' => $s['code'], 'device_name' => 'SM-A546E', 'device_key' => $phone]));
+        assertTrue(!isset($j['token']));
+        assertSame('TS10', $j['pair']['name']);
+        $pair = $S->db->one('SELECT * FROM cast_pairs WHERE id = ?', [$j['pair']['id']]);
+        assertSame(CastService::hash($car), $pair['receiver_hash']);
+        assertSame(CastService::hash($phone), $pair['sender_hash']);
+        assertSame(['TS10', 'SM-A546E'], [$pair['receiver_name'], $pair['sender_name']]);
+        assertTrue($pair['deleted_at'] === null && $pair['last_used_at'] !== null);
+        $row = $S->db->one('SELECT * FROM cast_sessions WHERE id = ?', [$s['id']]);
+        assertSame((int) $pair['id'], (int) $row['pair_id']);
+        assertSame('SM-A546E', $row['device_name']);
+        assertSame(CastService::hash($phone), $row['sender_hash']);
+
+        // màn hình xe biết đã ghép đôi (để bắt đầu hỏi lời mời), tin kết nối đi bằng khóa thiết bị
+        $seen = ctData(ctCall('GET', '/cast/sessions/' . $s['id'] . '/signals', [], $car));
+        assertSame([(int) $pair['id'], 'SM-A546E', 'paired'], [$seen['pair_id'], $seen['device_name'], $seen['status']]);
+        assertTrue(!isset($seen['picked']), 'phiên nhập mã không cần "picked"');
+        assertSame(201, ctCall('POST', '/cast/sessions/' . $s['id'] . '/signals', ['kind' => 'offer', 'payload' => ['sdp' => 'o', 'gen' => 1]], $phone)->status);
+        assertSame(['offer'], array_column(ctData(ctCall('GET', '/cast/sessions/' . $s['id'] . '/signals', [], $car))['signals'], 'kind'));
+
+        // danh sách: mỗi máy thấy tên máy BÊN KIA
+        $mine = ctData(ctDev('GET', '/cast/pairs', $phone));
+        assertSame(1, count($mine['pairs']));
+        assertSame(['sender', 'TS10'], [$mine['pairs'][0]['role'], $mine['pairs'][0]['name']]);
+        assertSame(3, $mine['poll_seconds']);
+        $carList = ctData(ctDev('GET', '/cast/pairs', $car))['pairs'];
+        assertSame(['receiver', 'SM-A546E'], [$carList[0]['role'], $carList[0]['name']]);
+        assertSame([], ctData(ctDev('GET', '/cast/pairs', str_repeat('e3', 24)))['pairs'], 'máy lạ không thấy gì');
+        assertSame(422, ctDev('GET', '/cast/pairs', '')->status);
+        assertSame(422, ctDev('GET', '/cast/pairs', 'khong-hop-le')->status);
+
+        // ghép đôi lại (mã mới, đổi tên) thì dùng lại cặp cũ, không tạo thêm
+        ctCall('POST', '/cast/sessions/' . $s['id'] . '/end', [], $car);
+        [, $j2] = ctPairUp($car, $phone, 'TS10 Pro', 'Pixel 8');
+        assertSame($j['pair']['id'], $j2['pair']['id']);
+        assertSame(1, (int) $S->db->value('SELECT COUNT(*) FROM cast_pairs'));
+        assertSame(['TS10 Pro', 'Pixel 8'], array_values($S->db->one('SELECT receiver_name, sender_name FROM cast_pairs WHERE id = ?', [$j['pair']['id']])));
+    } finally {
+        ctDone($S);
+    }
+});
+
+test('Ghép đôi: máy cũ không gửi khóa thiết bị vẫn chiếu như trước (không ghép đôi); không tự ghép đôi với chính mình', function () {
+    $S = ctBoot();
+    try {
+        $phone = str_repeat('d2', 24);
+        $old = ctData(ctCall('POST', '/cast/sessions'));
+        assertTrue(isset($old['token']) && strlen($old['token']) === 48, 'máy cũ vẫn nhận khóa phiên');
+        assertTrue($S->db->value('SELECT pair_id FROM cast_sessions WHERE id = ?', [$old['id']]) === null);
+        $j = ctData(ctCall('POST', '/cast/join', ['code' => $old['code'], 'device_name' => 'A', 'device_key' => $phone]));
+        assertSame(null, $j['pair'], 'màn hình xe kiểu cũ: không ghép đôi');
+        assertSame(0, (int) $S->db->value('SELECT COUNT(*) FROM cast_pairs'));
+        $j2 = ctData(ctCall('POST', '/cast/join', ['code' => ctData(ctCall('POST', '/cast/sessions', ['device_key' => str_repeat('c1', 24)]))['code'], 'device_name' => 'B']));
+        assertTrue(isset($j2['token']) && $j2['pair'] === null, 'điện thoại kiểu cũ: không ghép đôi');
+
+        $same = str_repeat('f6', 24);
+        [, $self] = ctPairUp($same, $same);
+        assertSame(null, $self['pair'], 'cùng một máy ở hai vai');
+        assertSame(0, (int) $S->db->value('SELECT COUNT(*) FROM cast_pairs'));
+    } finally {
+        ctDone($S);
+    }
+});
+
+test('Chia sẻ một chạm: điện thoại bấm "Chia sẻ", màn hình xe đã ghép đôi nhận đúng một lần rồi nối như cũ', function () {
+    $S = ctBoot();
+    try {
+        $car = str_repeat('c1', 24);
+        $phone = str_repeat('d2', 24);
+        [$s, $j] = ctPairUp($car, $phone);
+        $pid = $j['pair']['id'];
+        ctCall('POST', '/cast/sessions/' . $s['id'] . '/end', [], $phone);
+
+        $idle = ctData(ctDev('GET', '/cast/incoming', $car));
+        assertSame([1, null, []], [$idle['pairs'], $idle['incoming'], $idle['ice_servers']]);
+        assertSame(3, $idle['poll_seconds']);
+
+        $r = ctDev('POST', '/cast/pairs/' . $pid . '/share', $phone, ['device_name' => 'SM-A546E']);
+        assertSame(201, $r->status);
+        $sh = ctData($r);
+        assertSame(['sender', 'TS10'], [$sh['role'], $sh['pair']['name']]);
+        assertTrue($sh['ice_servers'] !== [] && !isset($sh['token']));
+        $row = $S->db->one('SELECT * FROM cast_sessions WHERE id = ?', [$sh['id']]);
+        assertSame(['', 'paired', $pid], [$row['code'], $row['status'], (int) $row['pair_id']]);
+        assertSame([CastService::hash($car), CastService::hash($phone)], [$row['receiver_hash'], $row['sender_hash']]);
+        assertSame(false, ctData(ctCall('GET', '/cast/sessions/' . $sh['id'] . '/signals', [], $phone))['picked'], 'chưa nhận');
+
+        $in = ctData(ctDev('GET', '/cast/incoming', $car));
+        assertSame(['id' => $sh['id'], 'device_name' => 'SM-A546E', 'pair_id' => $pid], $in['incoming']);
+        assertTrue($in['ice_servers'] !== []);
+        assertSame(null, ctData(ctDev('GET', '/cast/incoming', $car))['incoming'], 'chỉ nhận một lần (thẻ thứ hai không nhận trùng)');
+        assertSame(true, ctData(ctCall('GET', '/cast/sessions/' . $sh['id'] . '/signals', [], $phone))['picked'], 'điện thoại biết màn hình xe đã nhận');
+
+        // nối như phiên nhập mã: mỗi máy dùng khóa thiết bị của mình
+        assertSame(201, ctCall('POST', '/cast/sessions/' . $sh['id'] . '/signals', ['kind' => 'offer', 'payload' => ['sdp' => 'o', 'gen' => 1]], $phone)->status);
+        assertSame(['offer'], array_column(ctData(ctCall('GET', '/cast/sessions/' . $sh['id'] . '/signals', [], $car))['signals'], 'kind'));
+        assertSame(201, ctCall('POST', '/cast/sessions/' . $sh['id'] . '/signals', ['kind' => 'answer', 'payload' => ['sdp' => 'a', 'gen' => 1]], $car)->status);
+        assertSame(['answer'], array_column(ctData(ctCall('GET', '/cast/sessions/' . $sh['id'] . '/signals', [], $phone))['signals'], 'kind'));
+
+        // quyền: màn hình xe không "chia sẻ" được, máy lạ không thấy cặp
+        assertSame('CAST_NOT_SENDER', ctErr(ctDev('POST', '/cast/pairs/' . $pid . '/share', $car)));
+        assertSame('CAST_PAIR_NOT_FOUND', ctErr(ctDev('POST', '/cast/pairs/' . $pid . '/share', str_repeat('e3', 24))));
+        assertSame('CAST_PAIR_NOT_FOUND', ctErr(ctDev('POST', '/cast/pairs/999/share', $phone)));
+        assertSame(422, ctDev('POST', '/cast/pairs/' . $pid . '/share', '')->status);
+        assertSame(403, ctCall('POST', '/cast/pairs/' . $pid . '/share', [], '', [], '7.7.7.7', false)->status, 'thiếu CSRF');
+        assertSame([0, null], array_values(array_intersect_key(ctData(ctDev('GET', '/cast/incoming', str_repeat('e3', 24))), ['pairs' => 1, 'incoming' => 1])), 'máy lạ hỏi: không có gì');
+
+        // bấm "Chia sẻ" hai lần khi màn hình xe chưa nhận: lời mời trước kết thúc, màn hình xe chỉ nhận lời mời mới
+        $a = ctData(ctDev('POST', '/cast/pairs/' . $pid . '/share', $phone));
+        $b = ctData(ctDev('POST', '/cast/pairs/' . $pid . '/share', $phone));
+        assertSame(['ended', 'sender'], array_values($S->db->one('SELECT status, ended_by FROM cast_sessions WHERE id = ?', [$a['id']])));
+        assertSame($b['id'], ctData(ctDev('GET', '/cast/incoming', $car))['incoming']['id']);
+
+        // lời mời quá cũ (điện thoại đã thôi chờ) hoặc phiên đã kết thúc: không nhận, dọn lời mời
+        $c = ctData(ctDev('POST', '/cast/pairs/' . $pid . '/share', $phone));
+        $S->db->execute('UPDATE cast_pairs SET request_at = ? WHERE id = ?', [date('Y-m-d H:i:s', time() - CastService::REQUEST_TTL - 5), $pid]);
+        assertSame(null, ctData(ctDev('GET', '/cast/incoming', $car))['incoming']);
+        assertTrue($S->db->value('SELECT request_session_id FROM cast_pairs WHERE id = ?', [$pid]) === null);
+        $d = ctData(ctDev('POST', '/cast/pairs/' . $pid . '/share', $phone));
+        ctCall('POST', '/cast/sessions/' . $d['id'] . '/end', [], $phone);
+        assertSame(null, ctData(ctDev('GET', '/cast/incoming', $car))['incoming'], 'điện thoại đã hủy');
+        unset($c);
+
+        // tắt chức năng
+        Config::override('cast', ['enabled' => false]);
+        assertSame('CAST_DISABLED', ctErr(ctDev('POST', '/cast/pairs/' . $pid . '/share', $phone, [], '9.9.9.9')));
+        assertSame('CAST_DISABLED', ctErr(ctDev('GET', '/cast/incoming', $car, [], '9.9.9.9')));
+    } finally {
+        ctDone($S);
+    }
+});
+
+test('Quên thiết bị: xóa mềm ở máy nào cũng được, không DELETE; máy bên kia hết thấy, lời mời đang chờ kết thúc', function () {
+    $S = ctBoot();
+    try {
+        $car = str_repeat('c1', 24);
+        $phone = str_repeat('d2', 24);
+        $car2 = str_repeat('a9', 24);
+        [, $j] = ctPairUp($car, $phone);
+        [, $j2] = ctPairUp($car2, $phone, 'Xe 2', 'SM-A546E', '7.7.7.8');
+        assertSame(2, count(ctData(ctDev('GET', '/cast/pairs', $phone))['pairs']), 'một điện thoại, hai xe');
+
+        assertSame('CAST_PAIR_NOT_FOUND', ctErr(ctDev('POST', '/cast/pairs/' . $j['pair']['id'] . '/forget', str_repeat('e3', 24))), 'máy lạ không quên hộ được');
+        $r = ctDev('POST', '/cast/pairs/' . $j['pair']['id'] . '/forget', $phone);
+        assertSame(true, ctData($r)['forgotten']);
+        $row = $S->db->one('SELECT * FROM cast_pairs WHERE id = ?', [$j['pair']['id']]);
+        assertTrue($row !== null && $row['deleted_at'] !== null, 'dòng vẫn còn');
+        assertSame('sender', $row['deleted_by']);
+        assertSame(200, ctDev('POST', '/cast/pairs/' . $j['pair']['id'] . '/forget', $phone)->status, 'quên lần nữa: vẫn được');
+        assertSame(200, ctDev('POST', '/cast/pairs/' . $j['pair']['id'] . '/forget', $car)->status, 'máy kia quên sau: vẫn được');
+        assertSame(['Xe 2'], array_column(ctData(ctDev('GET', '/cast/pairs', $phone))['pairs'], 'name'));
+        assertSame([], ctData(ctDev('GET', '/cast/pairs', $car))['pairs'], 'màn hình xe cũng hết thấy');
+        assertSame(0, ctData(ctDev('GET', '/cast/incoming', $car))['pairs'], 'màn hình xe thôi hỏi');
+        assertSame('CAST_PAIR_NOT_FOUND', ctErr(ctDev('POST', '/cast/pairs/' . $j['pair']['id'] . '/share', $phone)));
+
+        // màn hình xe quên khi điện thoại đang chờ nó nhận
+        $sh = ctData(ctDev('POST', '/cast/pairs/' . $j2['pair']['id'] . '/share', $phone));
+        ctDev('POST', '/cast/pairs/' . $j2['pair']['id'] . '/forget', $car2);
+        assertSame(['ended', 'receiver'], array_values($S->db->one('SELECT status, ended_by FROM cast_sessions WHERE id = ?', [$sh['id']])));
+        assertSame('receiver', $S->db->value('SELECT deleted_by FROM cast_pairs WHERE id = ?', [$j2['pair']['id']]));
+        assertSame(410, ctCall('GET', '/cast/sessions/' . $sh['id'] . '/signals', [], $phone)->status, 'điện thoại được báo đã kết thúc');
+
+        // quên xong ghép đôi lại bằng mã: thành cặp mới
+        [, $again] = ctPairUp($car, $phone);
+        assertTrue($again['pair']['id'] !== $j['pair']['id']);
+        assertSame(3, (int) $S->db->value('SELECT COUNT(*) FROM cast_pairs'), 'không xóa dòng cũ');
+    } finally {
+        ctDone($S);
+    }
+});
+
+test('Ghép đôi: giới hạn số lần hỏi lời mời và số cặp mỗi máy', function () {
+    $S = ctBoot();
+    try {
+        $car = str_repeat('c1', 24);
+        $phone = str_repeat('d2', 24);
+        ctPairUp($car, $phone);
+        $last = null;
+        for ($i = 0; $i < 61; $i++) {
+            $last = ctDev('GET', '/cast/incoming', $car);
+        }
+        assertSame(429, $last->status, 'hỏi quá 60 lần/phút');
+        assertSame(200, ctDev('GET', '/cast/incoming', str_repeat('a9', 24))->status, 'máy khác không bị ảnh hưởng');
+
+        // một điện thoại tối đa MAX_PAIRS cặp: quá thì vẫn chiếu được, chỉ không ghép đôi thêm
+        for ($i = 0; $i < CastService::MAX_PAIRS; $i++) {
+            $S->db->insert('INSERT INTO cast_pairs (receiver_hash, sender_hash, created_at) VALUES (?, ?, ?)', [hash('sha256', 'x' . $i), CastService::hash($phone), date('Y-m-d H:i:s')]);
+        }
+        [, $j] = ctPairUp(str_repeat('b8', 24), $phone, 'Xe mới', 'P', '7.7.7.9');
+        assertSame(null, $j['pair']);
+        assertTrue($j['id'] > 0, 'vẫn chiếu được');
+    } finally {
+        ctDone($S);
+    }
+});
+
+test('Ghép đôi: bảng SQLite thử, schema.sql và migration 011 + 012 khớp nhau; không có DELETE', function () {
+    $schema = BASE_PATH . '/database/schema.sql';
+    $parse = function (string $sql, string $table): array {
+        if (preg_match('/CREATE TABLE (?:IF NOT EXISTS )?' . $table . ' \((.*?)\n\) ENGINE/s', $sql, $m) !== 1) {
+            return [];
+        }
+        preg_match_all('/^  ([a-z_]+) [A-Z]/m', $m[1], $c);
+        return $c[1];
+    };
+    $schemaSql = (string) file_get_contents($schema);
+    $m11 = (string) file_get_contents(BASE_PATH . '/database/migrations/011_cast_sessions.sql');
+    $m12 = (string) file_get_contents(BASE_PATH . '/database/migrations/012_cast_pairs.sql');
+    $sessions = $parse($schemaSql, 'cast_sessions');
+    $withPair = $parse($m11, 'cast_sessions');
+    array_splice($withPair, array_search('device_name', $withPair, true) + 1, 0, ['pair_id']);
+    assertSame($sessions, $withPair, 'schema.sql = migration 011 + cột pair_id sau device_name');
+    assertTrue(strpos($m12, 'ALTER TABLE cast_sessions ADD COLUMN pair_id INT UNSIGNED NULL AFTER device_name;') !== false);
+    assertSame($parse($schemaSql, 'cast_pairs'), $parse($m12, 'cast_pairs'), 'cast_pairs: migration 012 = schema.sql');
+    assertTrue(contains($schemaSql, "'012_cast_pairs.sql'"), 'schema.sql đánh dấu migration 012');
+    assertTrue(stripos((string) preg_replace('/^\s*--.*$/m', '', $m12), 'FOREIGN KEY') === false);
+    $db = adminSqliteDatabase();
+    if ($db !== null) {
+        foreach (['cast_sessions', 'cast_signals', 'cast_pairs'] as $t) {
+            $actual = array_column($db->all('PRAGMA table_info(' . $t . ')'), 'name');
+            $expected = $parse($schemaSql, $t);
+            sort($actual);
+            sort($expected);
+            assertSame($expected, $actual, 'bảng SQLite thử ' . $t);
+        }
+    }
+    $repo = (string) file_get_contents(BASE_PATH . '/app/Repositories/CastRepository.php');
+    assertTrue(preg_match('/\b(DELETE\s+FROM|TRUNCATE|REPLACE\s+INTO)\b/i', $repo) === 0);
+});

@@ -7,8 +7,10 @@ import { avatar } from '../../core/avatar.js';
  * các mục chính, nút đổi sáng/tối và nút Cài đặt (có ảnh đại diện khi đã đăng nhập).
  * items: [{ id, label, icon }]   onSelect(id)   appearance   user   onSettings()
  * onCast(): có thì thêm nút "Chiếu ĐT" (giai đoạn 15: chiếu màn hình điện thoại lên màn hình này; ẩn trên điện thoại).
+ * onShare(): có thì thêm nút "Chia sẻ" (giai đoạn 17: điện thoại chia sẻ màn hình lên xe; chỉ hiện ở bố cục điện thoại,
+ *            khi đó nút Sáng/Tối nhường chỗ - vẫn đổi được trong Cài đặt > Giao diện).
  */
-export function createRail({ items, onSelect, appearance, user, onSettings, onCast = null }) {
+export function createRail({ items, onSelect, appearance, user, onSettings, onCast = null, onShare = null }) {
   const buttons = {};
   items.forEach((it) => {
     buttons[it.id] = h('button', { type: 'button', class: 'rail-item', 'data-id': it.id, onclick: () => onSelect(it.id) }, icon(it.icon, 28), h('span', {}, it.label));
@@ -33,11 +35,15 @@ export function createRail({ items, onSelect, appearance, user, onSettings, onCa
   const castBtn = onCast ? h('button', { type: 'button', class: 'rail-item rail-cast', 'aria-pressed': 'false', title: 'Chiếu màn hình điện thoại lên màn hình này', onclick: onCast },
     icon('cast', 28), h('span', {}, 'Chiếu ĐT')) : null;
 
-  const el = h('nav', { class: 'rail', 'aria-label': 'Điều hướng chính' },
+  const shareBtn = onShare ? h('button', { type: 'button', class: 'rail-item rail-share', 'aria-pressed': 'false', 'aria-haspopup': 'dialog', title: 'Chia sẻ màn hình điện thoại lên màn hình xe', onclick: onShare },
+    icon('cast', 28), h('span', {}, 'Chia sẻ')) : null;
+
+  const el = h('nav', { class: 'rail', 'aria-label': 'Điều hướng chính', 'data-share': shareBtn ? '' : null },
     h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, icon('car', 24)),
     items.map((it) => buttons[it.id]),
     h('span', { class: 'rail-spacer' }),
     castBtn,
+    shareBtn,
     themeBtn,
     settingsBtn);
 
@@ -49,6 +55,8 @@ export function createRail({ items, onSelect, appearance, user, onSettings, onCa
       });
     },
     setCasting(on) { if (castBtn) castBtn.setAttribute('aria-pressed', String(on === true)); },
+    /** Điện thoại đang chia sẻ màn hình lên xe: nút "Chia sẻ" sáng lên. */
+    setSharing(on) { if (shareBtn) shareBtn.setAttribute('aria-pressed', String(on === true)); },
     destroy: offTheme,
   };
 }

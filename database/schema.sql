@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS cast_sessions (
   receiver_hash CHAR(64) NOT NULL,
   sender_hash CHAR(64) NULL,
   device_name VARCHAR(60) NOT NULL DEFAULT '',
+  pair_id INT UNSIGNED NULL,
   created_ip VARCHAR(45) NOT NULL DEFAULT '',
   joined_ip VARCHAR(45) NOT NULL DEFAULT '',
   code_expires_at DATETIME NOT NULL,
@@ -231,6 +232,26 @@ CREATE TABLE IF NOT EXISTS cast_signals (
   KEY idx_cast_signals (session_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Giai đoạn 17 (đợt 2): ghép đôi điện thoại với màn hình xe một lần (xem database/migrations/012_cast_pairs.sql).
+-- cast_sessions.pair_id ở trên: NULL = phiên kiểu cũ | 0 = màn hình xe ghép đôi được | > 0 = cast_pairs.id
+CREATE TABLE IF NOT EXISTS cast_pairs (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  receiver_hash CHAR(64) NOT NULL,
+  sender_hash CHAR(64) NOT NULL,
+  receiver_name VARCHAR(60) NOT NULL DEFAULT '',
+  sender_name VARCHAR(60) NOT NULL DEFAULT '',
+  request_session_id INT UNSIGNED NULL,
+  request_at DATETIME NULL,
+  last_used_at DATETIME NULL,
+  created_ip VARCHAR(45) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  deleted_at DATETIME NULL,
+  deleted_by VARCHAR(10) NULL,
+  PRIMARY KEY (id),
+  KEY idx_cast_pairs_receiver (receiver_hash),
+  KEY idx_cast_pairs_sender (sender_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT IGNORE INTO migrations (name, ran_at) VALUES ('001_core.sql', NOW());
 INSERT IGNORE INTO migrations (name, ran_at) VALUES ('002_single_device.sql', NOW());   -- các cột session_* của bảng users ở trên đã gồm bản 002
 INSERT IGNORE INTO migrations (name, ran_at) VALUES ('003_user_preferences.sql', NOW());
@@ -242,6 +263,7 @@ INSERT IGNORE INTO migrations (name, ran_at) VALUES ('008_user_api_keys.sql', NO
 INSERT IGNORE INTO migrations (name, ran_at) VALUES ('009_play_stats.sql', NOW());
 INSERT IGNORE INTO migrations (name, ran_at) VALUES ('010_user_phone_otp.sql', NOW());   -- cột phone của bảng users ở trên đã gồm bản 010
 INSERT IGNORE INTO migrations (name, ran_at) VALUES ('011_cast_sessions.sql', NOW());
+INSERT IGNORE INTO migrations (name, ran_at) VALUES ('012_cast_pairs.sql', NOW());   -- cột pair_id của cast_sessions ở trên đã gồm bản 012
 
 -- ------------------------------------------------------------
 -- TẠO ADMIN MASTER (bỏ dấu -- ở các dòng dưới, đổi email, mật khẩu và salt rồi chạy)

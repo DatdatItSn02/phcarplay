@@ -35,11 +35,22 @@ chứng minh mình bằng khóa nhận lúc tạo/nhập mã, gửi trong header
 
 | Đường dẫn | Gửi | Trả về |
 |---|---|---|
-| `POST /cast/sessions` | - | 201 `{id, code, token, role:'receiver', expires_in, ice_servers}`. Màn hình xe lấy mã 6 số (hiệu lực `CAST_CODE_TTL_SECONDS`, mặc định 300 giây). Tối đa 40 lần/giờ mỗi IP. 503 `CAST_DISABLED` |
-| `POST /cast/join` | `{code, device_name?}` | `{id, token, role:'sender', ice_servers}`. Điện thoại nhập mã; mã chỉ dùng một lần. 404 `CAST_CODE_INVALID`. Tối đa 12 lần/10 phút mỗi IP (chống dò mã) |
-| `GET /cast/sessions/{id}/signals?after=N` | header `X-Cast-Token` | `{status:'waiting'/'paired', role, device_name, signals:[{id, kind, payload}], code_expires_in?}` - tin của máy BÊN KIA sau tin số N. 404 `CAST_NOT_FOUND` (sai khóa), 410 `CAST_ENDED` (`details.ended_by`: `receiver`/`sender`/`expired`) |
+| `POST /cast/sessions` | `{device_key?, device_name?}` | 201 `{id, code, token?, role:'receiver', expires_in, ice_servers}`. Màn hình xe lấy mã 6 số (hiệu lực `CAST_CODE_TTL_SECONDS`, mặc định 300 giây). Có `device_key` (khóa thiết bị, giai đoạn 17) thì phiên ghép đôi được, máy dùng chính khóa đó làm `X-Cast-Token` và KHÔNG có `token` trả về; `device_name` là tên màn hình xe để hiện bên điện thoại. Tối đa 40 lần/giờ mỗi IP. 503 `CAST_DISABLED` |
+| `POST /cast/join` | `{code, device_name?, device_key?}` | `{id, token?, role:'sender', ice_servers, pair}`. Điện thoại nhập mã; mã chỉ dùng một lần. Có `device_key` và màn hình xe cũng có khóa thiết bị thì hai máy thành một cặp (hoặc dùng lại cặp cũ): `pair: {id, name}` (tên màn hình xe), ngược lại `pair: null`. 404 `CAST_CODE_INVALID`. Tối đa 12 lần/10 phút mỗi IP (chống dò mã) |
+| `GET /cast/sessions/{id}/signals?after=N` | header `X-Cast-Token` | `{status:'waiting'/'paired', role, device_name, signals:[{id, kind, payload}], code_expires_in?, pair_id?, picked?}` - tin của máy BÊN KIA sau tin số N. `device_name` rỗng khi chưa có điện thoại. `pair_id` khi phiên thuộc một cặp ghép đôi; `picked` (chỉ điện thoại, phiên do bấm "Chia sẻ"): màn hình xe đã nhận lời mời chưa. 404 `CAST_NOT_FOUND` (sai khóa), 410 `CAST_ENDED` (`details.ended_by`: `receiver`/`sender`/`expired`) |
 | `POST /cast/sessions/{id}/signals` | `{kind, payload}` + header | 201 `{id}`. `kind`: `offer`/`answer`/`ice`/`bye`; `payload` là object, tối đa 16.000 byte. 409 `CAST_NOT_PAIRED`, 422, 429 `CAST_TOO_MANY` (quá 3.000 tin/phiên) |
 | `POST /cast/sessions/{id}/end` | header | `{ended:true}`. Kết thúc phiên: không xóa dòng, ghi `ended_at`/`ended_by` và xóa trắng nội dung các tin |
+
+**Ghép đôi một lần (giai đoạn 17, đợt 2).** Mỗi máy có một khóa thiết bị bí mật (48 ký tự hex, tạo trên máy và lưu ở
+`localStorage` `carweb_cast_device`; máy chủ chỉ lưu bản băm), gửi trong header `X-Cast-Device`. Lần đầu nhập mã kèm khóa
+thì hai máy thành một cặp (bảng `cast_pairs`); lần sau điện thoại bấm "Chia sẻ" là chiếu, màn hình xe đã ghép đôi tự nhận.
+
+| Đường dẫn | Gửi | Trả về |
+|---|---|---|
+| `GET /cast/pairs` | header `X-Cast-Device` | `{pairs:[{id, role:'receiver'/'sender', name, created_at, last_used_at}], poll_seconds}` - các máy đã ghép đôi với máy này (`name` là tên máy BÊN KIA), dùng gần nhất trước. 422 nếu thiếu/sai khóa. Tối đa 120 lần/10 phút mỗi IP |
+| `POST /cast/pairs/{id}/share` | `{device_name?}` + header | 201 `{id, role:'sender', ice_servers, pair:{id, name}}`. Điện thoại tạo phiên không mã cho cặp đó (đã ghép sẵn hai máy, dùng khóa thiết bị làm `X-Cast-Token`) và để lời mời chờ màn hình xe nhận (tối đa `REQUEST_TTL` = 120 giây). Lời mời cũ chưa ai nhận thì kết thúc. 404 `CAST_PAIR_NOT_FOUND` (không phải cặp của máy này / đã "Quên"), 403 `CAST_NOT_SENDER` (màn hình xe gọi). Tối đa 30 lần/10 phút mỗi IP |
+| `GET /cast/incoming` | header `X-Cast-Device` | `{pairs, incoming:{id, device_name, pair_id}\|null, ice_servers, poll_seconds}`. Màn hình xe đã ghép đôi hỏi định kỳ (`CAST_POLL_SECONDS`, mặc định 3 giây; chưa ghép đôi thì không hỏi). Có lời mời thì nhận đúng một lần. `pairs` = số cặp còn dùng: 0 thì màn hình xe thôi hỏi. Tối đa 60 lần/phút mỗi máy, 1.200 lần/10 phút mỗi IP |
+| `POST /cast/pairs/{id}/forget` | header `X-Cast-Device` | `{forgotten:true}`. "Quên thiết bị" ở máy nào cũng được: không xóa dòng, ghi `deleted_at` + `deleted_by` (`receiver`/`sender`); lời mời đang chờ thì kết thúc. Gọi lại khi đã quên: vẫn 200 |
 
 
 ## YouTube (qua Piped, dự phòng Invidious rồi YouTube; khách cũng gọi được)

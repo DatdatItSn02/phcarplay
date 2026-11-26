@@ -532,6 +532,10 @@ cap.on = false;
   await car2.locator('.rail-cast').click();
   await car2.waitForFunction(() => { const e = document.querySelector('.cast-code'); return e && /^[0-9]{3} [0-9]{3}$/.test(e.textContent); }, null, { timeout: 8000 });
   const codeJ = await carCode(car2);
+  // giai đoạn 17 (đợt 2): điện thoại đã ghép đôi với xe đầu -> hộp hiện danh sách; nhập mã xe mới qua "Thêm màn hình xe khác"
+  await sleep(300);
+  const addCar = phone.getByRole('button', { name: 'Thêm màn hình xe khác (nhập mã)' });
+  if (await addCar.isVisible()) await addCar.click();
   await phone.locator('#cast-code').fill(codeJ);
   await phone.getByRole('button', { name: 'Kết nối' }).click();
   await waitFor(async () => (await castMsgs(phone)).filter((m) => m.type === 'cast.start').length === 2);
